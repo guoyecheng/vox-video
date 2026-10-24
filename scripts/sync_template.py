@@ -120,6 +120,14 @@ def copy_one(src_file: Path, dst_file: Path, backup: Path | None) -> None:
 
 
 def main() -> int:
+    # Windows 下 stdout 被重定向（npm run / 管道）时用 GBK，✓/✗ 这类符号会
+    # UnicodeEncodeError 把同步报告打断
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
     ap = argparse.ArgumentParser(description="模板 ↔ 项目 代码同步")
     ap.add_argument("--project", required=True, help="项目根目录")
     ap.add_argument("--template", default=None,
@@ -147,7 +155,7 @@ def main() -> int:
         print(f"  只在模板：{len(only_t)}  缺文件")
         for f in only_t[:20]:
             print(f"      - {f}")
-        print(f"  只在项目：{len(only_p)}  （项目私有文件，正常）")
+        print(f"  只在项目：{len(only_p)}  （未回灌的新增文件；push 不动它们，要进模板用 --pull）")
         for f in only_p[:20]:
             print(f"      + {f}")
         print(f"  内容不同：{len(diff)}")

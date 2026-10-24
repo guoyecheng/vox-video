@@ -21,16 +21,15 @@ const TEMPLATE = resolve(HERE, "..", "assets", "template");
 // ------------------------------------------------------------------ args
 
 function parseArgs(argv) {
-  const out = { slug: "", out: homedir(), from: "", link: false, noInstall: false };
+  const out = { slug: "", out: homedir(), from: "", noInstall: false };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--slug") out.slug = argv[++i] ?? "";
     else if (a === "--out") out.out = argv[++i] ?? "";
     else if (a === "--from") out.from = argv[++i] ?? "";
-    else if (a === "--link") out.link = true;
     else if (a === "--no-install") out.noInstall = true;
     else if (a === "-h" || a === "--help") {
-      console.log("用法: node scaffold.mjs --slug <名字> [--out <目录>] [--from <已有项目>] [--link] [--no-install]");
+      console.log("用法: node scaffold.mjs --slug <名字> [--out <目录>] [--from <已有项目>] [--no-install]");
       process.exit(0);
     }
   }
@@ -45,7 +44,8 @@ function parseArgs(argv) {
  */
 function placeholderTimeline(script) {
   const fps = script.fps ?? 30;
-  const ratePct = parseInt(String(script.rate ?? "+0%"), 10) || 0;
+  // 默认语速必须和 vox_tts.py 一致（+12%），否则预览节奏和成片差 12%
+  const ratePct = parseInt(String(script.rate ?? "+12%"), 10) || 0;
   const cps = 5.2 * (1 + ratePct / 100); // 中文基准约 5.2 字/秒
 
   let cursor = 0;
@@ -92,7 +92,7 @@ function placeholderTimeline(script) {
   return {
     title: script.title ?? "untitled",
     voice: script.voice ?? "zh-CN-YunjianNeural",
-    rate: script.rate ?? "+0%",
+    rate: script.rate ?? "+12%",
     fps,
     width: script.width ?? 1920,
     height: script.height ?? 1080,
@@ -124,11 +124,6 @@ function main() {
   const args = parseArgs(process.argv);
   if (!args.slug) {
     console.error("缺少 --slug。例如: node scaffold.mjs --slug voyager --out \"E:\\AI\\视频制作\"");
-    process.exit(1);
-  }
-  // 参数校验必须在动文件系统之前，否则报错时会留下半成品目录
-  if (args.link && !args.from) {
-    console.error("--link 需要配合 --from <已有项目>：它靠联接对方的 node_modules 来省掉安装。");
     process.exit(1);
   }
 
@@ -173,11 +168,13 @@ function main() {
   const destModules = join(target, "node_modules");
   const fromModules = args.from ? join(resolve(args.from), "node_modules") : "";
 
+  // 给了 --from 但那个项目没装过依赖：说清楚，别让人以为联接成功了
+  if (args.from && !existsSync(fromModules)) {
+    console.warn(`[scaffold] --from 指向的项目没有 node_modules：${fromModules}`);
+    console.warn("[scaffold] 退回正常安装流程。");
+  }
+
   if (fromModules && existsSync(fromModules)) {
-    if (!fromModules || !existsSync(fromModules)) {
-      console.error(`--from 指向的项目没有 node_modules：${fromModules || "(未提供 --from)"}`);
-      process.exit(1);
-    }
     if (existsSync(destModules)) rmSync(destModules, { recursive: true, force: true });
     try {
       symlinkSync(fromModules, destModules, "junction");

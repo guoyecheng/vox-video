@@ -140,11 +140,22 @@ async def run_tts(jobs: list[dict], concurrency: int) -> None:
 # ---------------------------------------------------------------- main
 
 def main() -> None:
+    # Windows 下 stdout 被重定向（npm run / 管道）时用 GBK，✗ → 这类符号会直接崩
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
     ap = argparse.ArgumentParser(description="script.json → 配音 + timeline.json")
     ap.add_argument("--project", default=".", help="项目根目录（含 script.json）")
     ap.add_argument("--rate", default=None, help="覆盖 script.json 的语速，如 +15%%")
     ap.add_argument("--voice", default=None, help="覆盖 script.json 的音色")
-    ap.add_argument("--only", default=None, help="只重做某个 beat（保留其余已合成的音频）")
+    ap.add_argument(
+        "--only",
+        default=None,
+        help="强制重做指定 beat；其它 beat 按缓存指纹判断，失效的会一并重合成",
+    )
     ap.add_argument("--concurrency", type=int, default=4, help="并发合成路数，默认 4")
     ap.add_argument("--force", action="store_true", help="忽略缓存，全部重新合成")
     args = ap.parse_args()

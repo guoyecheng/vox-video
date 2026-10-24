@@ -176,6 +176,13 @@ def sheet_html(jobs: list[dict], outdir: Path, cols: int) -> None:
 
 
 def main() -> int:
+    # Windows 下 stdout 被重定向（npm run / 管道）时用 GBK，✓ ✗ → 这类符号会直接崩
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
     ap = argparse.ArgumentParser(description="按 beat 抽静帧（闸门 B）")
     ap.add_argument("--project", default=".", help="项目根目录，默认当前目录")
     ap.add_argument("--timeline", default="src/timeline.json")

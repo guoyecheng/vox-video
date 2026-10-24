@@ -136,7 +136,7 @@ python "<skill>/scripts/verify_sync.py" --project "<项目>"
 python "<skill>/scripts/vox_tts.py" --project "<项目>" --force
 ```
 
-只重做某一拍：
+强制重做某一拍（其余拍按指纹走缓存；但如果别的拍文案也改过，会一并重合成）：
 
 ```bash
 python "<skill>/scripts/vox_tts.py" --project "<项目>" --only hook

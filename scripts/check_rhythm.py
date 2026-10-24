@@ -96,14 +96,17 @@ def check_transitions(beats: list[dict]) -> tuple[list[str], list[str]]:
     for k, n in cnt.most_common():
         out.append(f"   {k:<12} {n:>2}  {'#' * n}")
 
-    dup = [i for i in range(1, len(names)) if names[i] == names[i - 1]]
+    dup = [i for i in range(1, len(names))
+           if names[i] == names[i - 1] and names[i] != "none"]
+    # 连续硬切是 SKILL.md 推荐的做法（同类型连续内容用 none 比淡入淡出利落），
+    # 不算"等于没转"
     if dup:
         problems.append("相邻两拍用了同一种转场，等于没转")
         out.append(f"   {FAIL} 接缝 {dup} 处转场重复")
     else:
         out.append(f"   {OK} 无相邻重复")
 
-    if len(cnt) == 1 and len(names) >= 3:
+    if len(cnt) == 1 and len(names) >= 3 and names[0] != "none":
         problems.append(f"全片只用了一种转场（{names[0]}）")
         out.append(f"   {FAIL} 转场单一")
 
@@ -194,6 +197,13 @@ def check_arc(beats: list[dict]) -> tuple[list[str], list[str]]:
 
 
 def main() -> None:
+    # Windows 下 stdout 被重定向（npm run / 管道）时用 GBK，✗ ✓ 这类符号会直接崩
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
     ap = argparse.ArgumentParser(description="视觉节奏自检")
     ap.add_argument("--project", default=".")
     ap.add_argument("--src", default=None, help="组件源码目录，用于字号检查")

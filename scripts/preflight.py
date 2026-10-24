@@ -82,7 +82,11 @@ FONTS = ["public/fonts/NotoSansSC-VF.ttf", "public/fonts/ArchivoBlack-Regular.tt
 
 
 def kinds_from_code(project: Path) -> set[str] | None:
-    """从项目源码里读 VisualKind，免得脚本和代码两套名单。"""
+    """从项目源码里读 VisualKind，免得脚本和代码两套名单。
+
+    必须截到声明自己的那个分号：VisualKind 后面紧跟着 CameraMove / VfxKind / PieceIn，
+    按固定长度截取会把 "pan"、"none" 这类枚举值当成合法 kind 放过。
+    """
     p = project / "src" / "timeline.ts"
     if not p.exists():
         return None
@@ -90,8 +94,11 @@ def kinds_from_code(project: Path) -> set[str] | None:
     i = txt.find("export type VisualKind")
     if i < 0:
         return None
-    block = txt[i:i + 700]
-    names = set(re.findall(r'"(\w+)"', block))
+    block = txt[i:]
+    end = block.find(";")
+    if end < 0:
+        return None
+    names = set(re.findall(r'"(\w+)"', block[:end]))
     return names or None
 
 
@@ -384,12 +391,16 @@ def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
                 rep.err("script.json", f"配乐文件不存在：public/{msrc}"
                                       "（音乐由使用者提供，放进 public/ 目录）")
             # 音量提醒跟文件在不在无关，两件事都要报
-            gain = float(music.get("gain", 0.2) or 0)
-            duck = float(music.get("duck", 0.6) or 0)
-            if gain > 0.45:
-                rep.warn("script.json", f"music.gain={gain} 偏大，配乐容易盖过人声")
-            if duck < 0.4:
-                rep.warn("script.json", f"music.duck={duck} 偏小，人声段配乐让得不够")
+            try:
+                gain = float(music.get("gain", 0.2) or 0)
+                duck = float(music.get("duck", 0.6) or 0)
+            except (TypeError, ValueError) as e:
+                rep.err("script.json", f"music.gain/duck 要是数字：{e}")
+            else:
+                if gain > 0.45:
+                    rep.warn("script.json", f"music.gain={gain} 偏大，配乐容易盖过人声")
+                if duck < 0.4:
+                    rep.warn("script.json", f"music.duck={duck} 偏小，人声段配乐让得不够")
 
     arc = data.get("arc")
     if arc and arc not in ARCS:
@@ -399,7 +410,8 @@ def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
 
     if not isinstance(data.get("fps", 30), (int, float)) or data.get("fps", 30) <= 0:
         rep.err("script.json", "fps 要是正数")
-    rate = str(data.get("rate", "+0%"))
+    # 默认值和 vox_tts.py 保持一致：不写 rate 就是 +12%
+    rate = str(data.get("rate", "+12%"))
     if not re.fullmatch(r"[+-]\d+%", rate):
         rep.err("script.json", f"rate 格式不对：{rate}（应该像 +12% / -5%）")
     return data
@@ -414,6 +426,15 @@ def check_env(project: Path, rep: Report) -> None:
 
 
 def main() -> int:
+    # Windows 下 stdout 被重定向（npm run / 管道）时用 GBK，✗ → 这类符号会直接
+    # UnicodeEncodeError 把体检打断——报错还没看到，脚本先崩了
+    # stderr 也要一起改：sys.exit("中文") 走的是 stderr
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
     ap = argparse.ArgumentParser(description="开渲前的 script.json 体检")
     ap.add_argument("--project", default=".", help="项目根目录，默认当前目录")
     ap.add_argument("--strict", action="store_true", help="提醒也算失败")
@@ -433,7 +454,7 @@ def main() -> int:
     print(f"[preflight] 项目 {project}")
     if data:
         n = len(data.get("beats") or [])
-        print(f"  script.json：{n} 拍，rate={data.get('rate', '+0%')}，fps={data.get('fps', 30)}")
+        print(f"  script.json：{n} 拍，rate={data.get('rate', '+12%')}，fps={data.get('fps', 30)}")
     for w in rep.errors:
         print(f"  ✗ {w}")
     for w in rep.warns:

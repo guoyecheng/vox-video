@@ -242,6 +242,13 @@ def report_baseline(base_beats: list[dict], beats: list[dict], base_mean: float,
 
 
 def main() -> int:
+    # Windows 下 stdout 被重定向（npm run / 管道）时用 GBK，↑ ↓ 这类符号会直接崩
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
     ap = argparse.ArgumentParser(description="成片动效体检")
     ap.add_argument("video", nargs="?", help="直接给视频路径；配合 --project 时可省略")
     ap.add_argument("--project", default=".", help="项目根目录，默认当前目录")

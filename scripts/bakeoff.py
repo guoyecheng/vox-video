@@ -113,6 +113,13 @@ def build_sheet(out_dir: Path, rows: list[dict]) -> Path:
 
 
 def main() -> int:
+    # Windows 下 stdout 被重定向时用 GBK，✓/✗ 与中文混排会 UnicodeEncodeError
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
     ap = argparse.ArgumentParser(description="同一条 brief 出多风格对比图")
     ap.add_argument("--project", required=True, help="项目根目录")
     ap.add_argument("--manifest", default="", help="清单路径，默认 <project>/images.json")

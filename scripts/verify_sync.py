@@ -19,6 +19,11 @@ AAC encoder 会填充一段 priming 样本，导致渲出成片的音轨相对�
    TTS 源音频自带一小段前导静音，两边都有，所以**起点之差就是管线偏移**
 3. 和时间轴推算的绝对位置比对，输出每拍的误差
 
+注意配乐床：本脚本的人声起点探针只看**能量上跳**，分不清旁白和配乐。
+写了 music 的片子，音乐若在旁白之前淡入（我们推荐的做法），首拍探针会测到
+音乐的起点，得出一个假的偏移。**测同步请先在 script.json 里去掉 music
+重新渲染，或直接拿无配乐版本测**；另外 ±2~3 帧是这套量法本身的测量精度。
+
 用法
 ----
     python verify_sync.py --project "<项目路径>"
@@ -121,6 +126,13 @@ def rms_db(samples: array.array) -> float:
 # ---------------------------------------------------------------- 主流程
 
 def main() -> None:
+    # Windows 下 stdout 被重定向（npm run / 管道）时用 GBK，→ 这类符号会直接崩
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
     ap = argparse.ArgumentParser(description="校验成片音画同步")
     ap.add_argument("--project", default=".")
     ap.add_argument("--out", default=None, help="成片路径，默认 out/video.mp4")
@@ -187,8 +199,9 @@ def main() -> None:
         if abs(offset_frames) <= 0.5:
             print("       判定：偏移可忽略，无需补偿")
         else:
-            print(f"       判定：存在系统性偏移，建议在 script.json 里加 "
-                  f"audioOffsetMs 抵消，或接受 {abs(offset_frames):.2f} 帧误差")
+            print(f"       判定：存在系统性偏移 {abs(offset_frames):.2f} 帧。"
+                  f"当前版本没有自动补偿字段——要抵消就逐拍调 padBefore 后重跑 tts，"
+                  f"或接受这个误差")
 
         # ---- 逐拍误差表（已扣除同一个管线偏移后的"残余"）
         print(f"\n[sync] 逐拍同步误差表（包络互相关）")
@@ -218,15 +231,19 @@ def main() -> None:
         # ---- 结论：区分"系统性偏移"和"抖动"，这两者的处理方式完全不同
         # 全部拍残差都相同 → 常数偏移，可整体补偿；
         # 残差随时间散开 → 真的在漂移，要去找原因。
+        if not rows:
+            sys.exit("[sync] 没有任何拍能测（源 mp3 缺失，或语音段短于模板长度）")
         resids = [r["residual_frames"] for r in rows]
         mean_r = sum(resids) / len(resids)
         jitter = max(abs(x - mean_r) for x in resids)
-        offset_frames = mean_r
+        # 这是互相关量出来的系统性偏移，和上面 onset 探针那个不是同一个测量
+        systematic_frames = mean_r
 
         verdict = "通过" if jitter <= args.tol_frames else "抖动超容差"
 
         print(f"\n[sync] 结论")
-        print(f"       系统性偏移 {offset_frames:+.2f} 帧（所有拍一致，可整体补偿）")
+        print(f"       系统性偏移 {systematic_frames:+.2f} 帧（互相关，所有拍一致，可整体补偿）")
+        print(f"       onset 探针 {offset_frames:+.2f} 帧（仅首拍，配乐淡入在前时这个值不可信）")
         print(f"       抖动       ±{jitter:.2f} 帧（逐拍离散度，容差 {args.tol_frames}）")
         print(f"       判定       {verdict}")
         print(f"       测量精度   8kHz 包络互相关对中文语音约有 ±2~3 帧的音节歧义，"
@@ -235,8 +252,10 @@ def main() -> None:
         out = project / "out" / "sync-report.json"
         out.write_text(json.dumps({
             "fps": fps,
-            "pipeline_offset_ms": round(offset_ms, 1),
-            "pipeline_offset_frames": round(offset_frames, 3),
+            # onset 探针（首拍能量起点）与互相关（全部拍）是两个独立的测量
+            "onset_offset_ms": round(offset_ms, 1),
+            "onset_offset_frames": round(offset_frames, 3),
+            "systematic_offset_frames": round(systematic_frames, 3),
             "jitter_frames": round(jitter, 2),
             "tolerance_frames": args.tol_frames,
             "verdict": verdict,
