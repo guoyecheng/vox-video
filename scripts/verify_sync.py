@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import argparse
 import array
-import glob
 import json
 import math
 import shutil
@@ -45,24 +44,14 @@ import tempfile
 import wave
 from pathlib import Path
 
+from _media import find_ffmpeg
+
 SAMPLE_RATE = 8000      # 降采样到 8k：纯 Python 也能秒级处理，且语音包络足够清晰
 BIN = 0.001             # 能量帧长 1ms = 8 samples
 THRESHOLD = 0.06        # 相对该信号 95 分位的门限
 
 
 # ---------------------------------------------------------------- ffmpeg
-
-def find_ffmpeg(project: Path) -> str:
-    for pat in ("node_modules/@remotion/compositor-*/ffmpeg.exe",
-                "node_modules/@remotion/compositor-*/ffmpeg",
-                "../node_modules/@remotion/compositor-*/ffmpeg.exe"):
-        hits = sorted(glob.glob(str(project / pat)))
-        if hits:
-            return hits[0]
-    which = shutil.which("ffmpeg")
-    if which:
-        return which
-    sys.exit("[sync] 找不到 ffmpeg。先在项目里跑一次 npm install。")
 
 
 def to_wav(src: Path, dest: Path, ffmpeg: str) -> Path:
@@ -151,6 +140,8 @@ def main() -> None:
     tl = json.loads(tl_path.read_text(encoding="utf-8"))
 
     ffmpeg = find_ffmpeg(project)
+    if not ffmpeg:
+        sys.exit("[sync] 找不到 ffmpeg。先在项目里跑一次 npm install。")
     tmp = Path(tempfile.mkdtemp(prefix="vox-sync-"))
 
     try:

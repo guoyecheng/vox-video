@@ -9,7 +9,7 @@
 - [Person](#person) · [Route](#route) · [Callout](#callout) · [QuoteCard](#quotecard)
 - [CompareSplit](#comparesplit) · [TimelineRail](#timelinerail) · [CardStack](#cardstack) · [ImageCard](#imagecard)
 - [CaptionTrack](#captiontrack) — 常驻字幕轨，不由 `kind` 控制
-- [背景与常驻件](#背景与常驻件) · [特效层](#特效层) · [运镜层](#运镜层-camera) · [配乐床](#配乐床-musictsx)
+- [背景与常驻件](#背景与常驻件) · [特效层](#特效层) · [运镜层](#运镜层camera) · [配乐床](#配乐床musictsx)
 - [共用工具](#共用工具) · [加新组件](#加一个新组件四个文件缺一不可)
 
 ---
@@ -691,10 +691,21 @@ volume(f) = gain × (1 − duck × 让路量(f)) × 淡入(f) × 淡出(f)
 
 ## 转场
 
-见 `SKILL.md` 的「转场与特效」一节。核心一条：
+核心一条：**视觉走 `TransitionSeries` 做交叠，音频按实测位置绝对摆放、完全不参与。**
+所以转场纯属视觉决策，改它不会让旁白错位；但视觉时钟必须扣掉交叠帧
+（`cursor += dur - next_te`）。选型原则见 `SKILL.md` 的「转场与特效」。
 
-**视觉走 `TransitionSeries` 做交叠，音频按实测位置绝对摆放、完全不参与。**
-所以转场纯属视觉决策，改它不会让旁白错位。
+`transitions.ts` 暴露 16 种（Remotion 原生 20 种，未接入另外 4 种）：
+
+`none`（硬切）、`fade`、`dissolve`、`slide`、`pushCut`、`blurSlide`、`wipe`、
+`iris`、`clockWipe`、`flip`、`bookFlip`、`crossZoom`、`zoomInOut`、`dreamyZoom`、
+`filmBurn`、`ripple`。
+
+别名：`default` → `fade`、`push` → `slide`、`cut` / `hard` → `none`、
+`book` → `bookFlip`、`burn` → `filmBurn`。
+
+`clockWipe` / `iris` 必须传画幅尺寸，否则 Remotion 4.0.535 会算出 `NaN` 半径并抛
+`Malformed path data`。模板的 `transitionFor()` 已统一从 `useVideoConfig()` 喂入。
 
 ---
 

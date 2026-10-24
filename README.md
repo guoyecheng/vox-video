@@ -27,7 +27,7 @@ scaffold → script.json → preflight → TTS + timeline.json → stills → re
 | `assets/script.example.json` | `script.json` 带注释示例 |
 | `assets/images.example.json` | 配图清单示例 |
 | `assets/comfy/` | ComfyUI 工作流与模型文件名清单 |
-| `references/` | 叙事弧、组件 props、ComfyUI、排错手册 |
+| `references/` | 叙事弧、组件 props、ComfyUI、实测调优、排错手册 |
 | `scripts/` | 流水线脚本 |
 | `evals/` | 回归用例 |
 
@@ -93,6 +93,7 @@ python "<skill>/scripts/verify_sync.py" --project "<项目>"
 | `bakeoff.py` | 定视觉风格前 | 同一 brief 多风格各出一张 + 对比表 |
 | `sync_template.py` | 改过组件后 | 模板与项目代码同步（`--check` / `--push` / `--pull`） |
 | `scaffold.mjs` | 立项目 | 从模板复制并安装依赖 |
+| `selftest.py` | 改过脚本后 | 回归断言：kind 名单、转场规则、默认语速、报告字段、文档路径与锚点 |
 
 ## 模板同步
 

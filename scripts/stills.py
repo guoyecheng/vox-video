@@ -36,6 +36,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _media import compositor_bins
+
 
 def find_remotion(project: Path) -> list[str]:
     """优先用项目里的 remotion，找不到再退回 npx。"""
@@ -47,16 +49,6 @@ def find_remotion(project: Path) -> list[str]:
     if shutil.which("npx"):
         return ["npx", "--no-install", "remotion"]
     sys.exit("[stills] 找不到 remotion。先在项目里跑一次 npm install。")
-
-
-def find_ffmpeg(project: Path) -> str | None:
-    for pat in ("node_modules/@remotion/compositor-*/ffmpeg.exe",
-                "node_modules/@remotion/compositor-*/ffmpeg",
-                "../node_modules/@remotion/compositor-*/ffmpeg.exe"):
-        hits = sorted(glob.glob(str(project / pat)))
-        if hits:
-            return hits[0]
-    return shutil.which("ffmpeg")
 
 
 def plan(timeline: dict, offset: int, tail: bool) -> list[dict]:
@@ -102,10 +94,7 @@ def render(project: Path, remotion: list[str], jobs: list[dict], outdir: Path) -
 def full_ffmpeg(project: Path) -> str | None:
     """找一个**带 tile 滤镜**的 ffmpeg。Remotion 自带的那个阉割版没有，
     拼不出联络表。系统装了完整版就能拼 PNG 版。"""
-    cands = [shutil.which("ffmpeg")]
-    for pat in ("node_modules/@remotion/compositor-*/ffmpeg.exe",
-                "node_modules/@remotion/compositor-*/ffmpeg"):
-        cands += sorted(glob.glob(str(project / pat)))
+    cands = [shutil.which("ffmpeg"), *compositor_bins(project, "ffmpeg")]
     for c in cands:
         if not c:
             continue

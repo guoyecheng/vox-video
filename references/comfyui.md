@@ -72,8 +72,21 @@ python "<skill>/scripts/comfy_gen.py" --check --project "<项目>"
 
 - `models` 不写就是默认的 `z_image_turbo`。`workflow`、`steps`、`cfg` 一般也不用写——
   模型组里已经带着（Z-Image 8 步 / cfg 1.0，FLUX 4 步 / cfg 1.0）。
-- `style_preset` 可选 `paper`（默认，纸艺拼贴微缩舞台）或 `vector`（扁平编辑插画）。
-  **全片一份**，换了就等于换画风。单条要覆盖时在条目里写 `style` / `negative`。
+- `style_preset` 全片一份，换了就等于换画风。单条要覆盖时在条目里写 `style` / `negative`。
+  内置预设：
+
+  | 预设 | 样子 |
+  |---|---|
+  | `paper`（默认） | 厚纸多层拼贴、柔和投影、纤维质感 |
+  | `paper-ink` | 宣纸水墨，焦墨淡墨分层次，朱砂点染 |
+  | `paper-newsprint` | 旧报刊：米白 + 深红 + 芥黄，半调网点、套印偏移 |
+  | `paper-poster` | 复古宣传画：红黑米白三色油墨，强对角几何 |
+  | `paper-zine` | 朋克复印：黑白噪点 + 一个荧光色，粗黑描边 |
+  | `paper-washi` | 淡雅和纸：浅灰蓝 + 极淡赭色，留白多 |
+  | `vector` | 平面矢量插画（不是纸艺） |
+
+  选风格用 `bakeoff.py`：同一条 brief、同一个 seed、只有预设不同，出一张联络表让人挑，
+  挑出来的是"这套风格好"而不是"这张运气好"。
 - 老写法 `"prompt": "a lone courier on a dusty road"` 仍然能用，但不带文字规则；
   正文里给用户的清单建议一律写成 `scene`。
 - **蒸馏模型（Z-Image / FLUX）cfg 是 1.0，负向提示词根本不起作用。**
@@ -92,7 +105,7 @@ python "<skill>/scripts/comfy_gen.py" --check --project "<项目>"
 
 ## 逐镜提示词模板
 
-照 vox-full-pipeline 的 MG-VOXSTAGE 分镜写法，字段顺序固定，不合并、不换顺序：
+字段顺序固定，不合并、不换顺序（同一部片子里每张图都按同一顺序写，风格漂移会小得多）：
 
 | 字段 | 写什么 | 反例 |
 | --- | --- | --- |
@@ -190,7 +203,9 @@ python "<skill>/scripts/comfy_gen.py" --project "<项目>" --models z_image_turb
 
 ### C. 临时覆盖
 
-`--workflow xxx` 覆盖清单里的工作流名，配 `--only` 可以只重抽某几张。
+`--workflow xxx` 覆盖清单里的工作流名，`--models xxx` 覆盖模型组，
+`--preset xxx` 覆盖风格预设（`paper` / `paper-ink` / … / `vector`）。三者都能配
+`--only` 只重抽某几张。
 
 ### 占位符全集
 

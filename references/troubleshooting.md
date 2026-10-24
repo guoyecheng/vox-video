@@ -163,6 +163,7 @@ StatCard 的计数起点跟着旁白走。旁白把数字放在句尾时，滚�
 | 报错 | 原因与处理 |
 |---|---|
 | `RangeError: Frame NaN is not finite` | `spring()` 收到了 NaN。`BeatPresence.tsx` 里的 `safe()` 已做防护；自己写组件时，喂进 `spring` 的每个数都先过一遍 `Number.isFinite` |
+| `Malformed path data: M was expected to have numbers` | `clockWipe` / `iris` 需要画幅尺寸。无参调用时 Remotion 4.0.535 内部算出 `NaN` 半径，生成 `M NaN…` 路径，崩在渲染那一帧。模板的 `transitionFor()` 已统一喂尺寸；自己直接调这两个转场时也要传 `width` / `height` |
 | webpack 解析失败，错误信息巨长（列举所有尝试的后缀） | `src/components/` 下导入 `src/theme` 必须写 `../theme`，不是 `./theme` |
 | `Cannot find module './timeline.json'` | 没跑 `vox_tts.py`，或 `script.json` 解析失败。scaffold 会先放一份占位 timeline，所以正常不会遇到 |
 | 首帧闪一下 / 资源没就绪 | `<Sequence>` 少了 `premountFor`。模板里都加了 30 帧，新加的 `<Sequence>` 也要加 |
@@ -217,6 +218,12 @@ npx remotion render VoxVideo out/video.mp4 --rebuild
 
 强调色按 `ACCENT_CYCLE`（`theme.ts`）逐拍轮转。相邻两拍同色会显得平，
 把 `ACCENT_CYCLE` 的顺序打乱，或往里加颜色。
+
+### 配图拍整体发品红
+
+`AmbientLight` 的 accent 色斑压在照片上：照片本身有色彩，再叠一层品红/橙色
+混合模式，整拍的色调就偏了。模板对有 `image` 的拍自动关闭 `AmbientLight`；
+自己改过 `visuals.tsx` 的话，检查那一拍是不是漏了这条判断。
 
 ### 某一拍迟迟不出东西
 
@@ -384,6 +391,7 @@ i2v 素材（元素本身的纹理在动）。继续加到 15-20px 只会看起�
 - **人像拍的圆形头像被横带切开**：`person` 拍的圆形剪影正好在画面左侧中段，
   任何横着的背景带都会从中间切断它。这种拍要么用整幅背景（不给 `band`），
   要么把带压到头像下方（`y` ≥ 0.72），要么干脆不用背景。
+- **大数字拍留白最好**：`stat` 拍别加图，也不要用分层背景。
 - **图里多出蓝色地面 / 写实泥土**：模型会自作主张加"水/泥地"。brief 里要显式禁止：
   "墙脚以下仍是一整张米色纸""不要写实的泥土裂纹"。出了这种图就改 brief 重出，
   不要靠裁切救——裁切只能从底部取，躲不开。

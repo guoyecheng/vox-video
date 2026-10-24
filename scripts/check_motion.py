@@ -35,12 +35,12 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from _media import find_ffmpeg
 
 W, H = 192, 108          # 降采样到 192x108：和参考片的量法一致，纯 Python 也够快
 FPS = 10                 # 采样帧率。30fps 全量没必要，10fps 足以看清静止段
@@ -51,18 +51,6 @@ CUT = 8.0                # 硬切判定：帧差突然跳起来
 
 
 # ---------------------------------------------------------------- ffmpeg
-
-def find_ffmpeg(project: Path) -> str:
-    for pat in ("node_modules/@remotion/compositor-*/ffmpeg.exe",
-                "node_modules/@remotion/compositor-*/ffmpeg",
-                "../node_modules/@remotion/compositor-*/ffmpeg.exe"):
-        hits = sorted(glob.glob(str(project / pat)))
-        if hits:
-            return hits[0]
-    which = shutil.which("ffmpeg")
-    if which:
-        return which
-    sys.exit("[motion] 找不到 ffmpeg。先在项目里跑一次 npm install，或用 --ffmpeg 指定。")
 
 
 def iter_frames(video: Path, ffmpeg: str, w: int, h: int, fps: int):
@@ -272,6 +260,8 @@ def main() -> int:
         sys.exit(f"[motion] 找不到成片：{video}")
 
     ffmpeg = a.ffmpeg or find_ffmpeg(project)
+    if not ffmpeg:
+        sys.exit("[motion] 找不到 ffmpeg。先在项目里跑一次 npm install，或用 --ffmpeg 指定。")
     res = analyze(video, ffmpeg, use_grid=True)
 
     beats = []

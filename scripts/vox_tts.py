@@ -15,16 +15,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import glob
 import hashlib
 import json
 import math
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from _media import find_ffprobe
 
 # ---------------------------------------------------------------- bootstrap
 
@@ -56,22 +56,6 @@ def _bootstrap(project: Path) -> None:
 
 
 # ---------------------------------------------------------------- utilities
-
-def find_ffprobe(project: Path) -> str:
-    """Remotion 会把 ffprobe 打包进 compositor-*，直接用它，省得装 ffmpeg。"""
-    for pat in (
-        "node_modules/@remotion/compositor-*/ffprobe.exe",
-        "node_modules/@remotion/compositor-*/ffprobe",
-        "../node_modules/@remotion/compositor-*/ffprobe.exe",
-    ):
-        hits = sorted(glob.glob(str(project / pat)))
-        if hits:
-            return hits[0]
-    which = shutil.which("ffprobe")
-    if which:
-        return which
-    sys.exit("[tts] 找不到 ffprobe。先在项目里跑一次 npm install（Remotion 会带上它）。")
-
 
 def probe_duration(ffprobe: str, media: Path) -> float:
     out = subprocess.run(
@@ -260,6 +244,8 @@ def main() -> None:
     #    少了这一步，一旦留白被放大，片尾旁白就会被静默截断——
     #    这类 bug 在预览单帧时完全看不出来。
     ffprobe = find_ffprobe(project)
+    if not ffprobe:
+        sys.exit("[tts] 找不到 ffprobe。先在项目里跑一次 npm install（Remotion 会带上它）。")
     default_te = int(round(float(script.get("transitionFrames", 10))))
 
     # ---- 2a. 先把音频时长量出来
