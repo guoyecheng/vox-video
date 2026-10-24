@@ -1,0 +1,27 @@
+{
+  "//": "工作流用到的模型文件名。换机器只改这里，不要改 workflows/ 下的图。",
+  "//license": "商用优先：z_image_turbo / flux_schnell_gguf 都是 Apache 2.0。qwen_image_2_1 不可商用，只留作测试。",
+  "z_image_turbo": {
+    "workflow": "z_image_turbo_t2i",
+    "unet": "z_image_turbo_int8_convrot.safetensors",
+    "clip": "qwen_3_4b_fp8_mixed.safetensors",
+    "vae": "ae.safetensors",
+    "steps": 8,
+    "cfg": 1.0
+  },
+  "flux_schnell_gguf": {
+    "workflow": "flux_schnell_gguf_t2i",
+    "unet": "flux1-schnell-Q4_K_S.gguf",
+    "clip": "clip_l.safetensors",
+    "clip2": "t5xxl_fp8_e4m3fn_scaled.safetensors",
+    "vae": "ae.safetensors",
+    "steps": 4,
+    "cfg": 1.0
+  },
+  "qwen_image_2_1": {
+    "workflow": "qwen_image_2_1_t2i",
+    "unet": "qwen_image_2.1_int8_convrot.safetensors",
+    "clip": "qwen3vl_8b_w4a8.safetensors",
+    "vae": "qwen_image_2.1_vae_bf16.safetensors"
+  }
+}

@@ -1,0 +1,152 @@
+{
+  "title": "为什么 Wi-Fi 越用越慢",
+  "voice": "zh-CN-YunjianNeural",
+  "rate": "+12%",
+  "fps": 30,
+
+  "_note_transition": "进入每一拍的转场交叠帧数，约 0.33s。每拍尾部留白会自动撑到不小于这个值，所以不会截断旁白。",
+  "transitionFrames": 10,
+  "tailPad": 0.6,
+
+  "_note_beat": "beat = 一段旁白 + 一个视觉。id 唯一。transition 是『进入这一拍』的转场，第 0 拍写 none。",
+  "_note_words": "visual.words 应当是 narration 里原样出现的词序，否则逐词卡点会退化。",
+  "_note_attribution": "只写真实存在的来源。拿不到就把这一拍改成 kinetic，让陈述本身承担说服力。",
+  "_note_impact": "impact / flash 属于全画面级冲击，全片合计 ≤3 处且间隔 ≥3 拍。",
+  "_note_holds": "每拍时长由旁白实测推导，不要手写帧数。想调节奏改 rate 或 padAfter，然后重跑 npm run tts。",
+  "_note_music": "music：配乐床。音乐文件由使用者提供，放进 public/ 下（相对路径）。gain=整体音量 0-1；duck=有人说话时压低多少 0-1（0.6 表示说话时只剩 40%）。没有音乐就删掉整个 music 字段。",
+  "_note_arc": "arc：叙事弧（见 references/arcs.md）。先选弧，再排 beat。合法的：hook_payoff / how_it_works / timeline / chronicle / man_in_hole / myth_buster / three_act / origin / story_spine / pas / bab / aida / listicle / story_circle",
+  "_note_axes": "两根轴：visual.camera 是整幅怎么动（push_in / pull_out / pan / tilt / parallax / whip / static，默认 push_in），visual.elementMotion 是这一拍画面里什么在动（写给实现看，也是反单调的检查项）。visual.vfx 可选：confetti（纸屑雨）/ starburst（冲击放射）。",
+  "_note_image": "配图（可选）：visual.image 写 'img/xxx.png'（相对 public/）。imageLayout=full 是整幅压在纸下，inset 是像照片一样角贴在右侧。imageWash 是纸浆覆盖强度 0-1。写成这样：\"image\": \"img/spectrum-wall.png\", \"imageLayout\": \"full\", \"imageWash\": 0.42",
+  "_note_layers": "分层背景板（可选）：visual.layers 是一组从远到近的图。depth 0-1 控视差，band 是露出原图底部那条带的比例，y 是这条带落在画面的位置（0-1，给了 band 就要给 y）。image 和 layers 可以同时给：image 当最底一张，layers 叠在上面。写成这样：\"layers\": [{\"src\": \"img/far.png\", \"depth\": 0.1, \"band\": 0.45, \"y\": 0.28}, {\"src\": \"img/near.png\", \"depth\": 0.95, \"band\": 0.24, \"y\": 0.74}]",
+
+  "_note_pieces": "碎片拼贴（可选）：把一张图切成几块飞进来拼回原图。visual.pieceBase 是底图（和 image 互斥），visual.pieces 每块写 x/y/w/h（画幅比例 0-1）、enter（fly_left/fly_right/fly_up/drop/slap/pop）、at（拍内第几帧开始飞）、depth 0-1、spin 度。四块正好铺满=拼回整图。图必须 16:9。写成这样：\"pieceBase\": \"img/shot-knife.png\", \"pieces\": [{\"x\": 0, \"y\": 0, \"w\": 0.551, \"h\": 0.509, \"enter\": \"fly_left\", \"at\": 12, \"depth\": 0.62}, {\"x\": 0.551, \"y\": 0, \"w\": 0.449, \"h\": 0.509, \"enter\": \"fly_right\", \"at\": 17}]",
+  "_note_dissolve": "dissolve 不是软溶解，它按亮度烧灼（平涂画面会整幅闪橙）。软切换用 fade。",
+  "arc": "hook_payoff",
+  "music": {
+    "src": "audio/bed.mp3",
+    "gain": 0.2,
+    "duck": 0.6,
+    "fadeIn": 18,
+    "fadeOut": 30
+  },
+  "beats": [
+    {
+      "id": "hook",
+      "transition": "none",
+      "narration": "你花钱升级到了千兆宽带，但家里的 Wi-Fi，却一年比一年慢。",
+      "visual": {
+        "kind": "kinetic",
+        "words": ["千兆宽带", "一年比一年慢"],
+        "emphasis": ["一年比一年慢"],
+        "camera": "push_in",
+        "elementMotion": "大字逐词弹出，念到\u2018年比一年慢\u2019时整行压一下"
+      }
+    },
+    {
+      "id": "three-thieves",
+      "transition": "pushCut",
+      "narration": "这不是错觉。有三个东西，正在偷走你的带宽。",
+      "visual": {
+        "kind": "cards",
+        "items": [
+          { "title": "邻居的 Wi-Fi", "detail": "和你抢同一段频谱" },
+          { "title": "你自己的智能设备", "detail": "几十台设备共用一个空口" },
+          { "title": "那台用了很久的路由器", "detail": "发热降频、信道选错" }
+        ]
+      }
+    },
+    {
+      "id": "channels",
+      "transition": "zoomInOut",
+      "narration": "全世界只放了三个互不重叠的信道，因为 2.4G 这个频段实在太小了。",
+      "visual": {
+        "kind": "stat",
+        "value": 3,
+        "unit": "个",
+        "label": "2.4G 全部不重叠信道",
+        "source": "IEEE 802.11",
+        "impact": "medium"
+      }
+    },
+    {
+      "id": "quote",
+      "transition": "fade",
+      "narration": "在一个住了两百户的公寓楼里，Wi-Fi 其实不是你的，是所有人的。",
+      "visual": {
+        "kind": "quote",
+        "text": "在一个住了两百户的公寓楼里，Wi-Fi 其实不是你的，是所有人的。",
+        "attribution": "无线网络工程师，访谈"
+      }
+    },
+    {
+      "id": "bands",
+      "transition": "wipe",
+      "narration": "所以路由器都开着两个频段。5G 更干净，但穿墙能力差。",
+      "visual": {
+        "kind": "compare",
+        "vsLabel": "VS",
+        "left": { "title": "2.4G", "value": "3 条", "detail": "穿墙强，邻居也多" },
+        "right": { "title": "5G", "value": "数十条", "detail": "干净，但穿不过墙" }
+      }
+    },
+    {
+      "id": "devices",
+      "transition": "slide",
+      "narration": "而你自己的设备，也在排队。每多连一台，共享的就少一分。",
+      "visual": {
+        "kind": "kinetic",
+        "words": ["你的设备，也在排队", "每多连一台", "共享的就少一分"],
+        "emphasis": ["共享的就少一分"],
+        "align": "center"
+      }
+    },
+    {
+      "id": "history",
+      "transition": "clockWipe",
+      "narration": "从 802.11n 到 Wi-Fi 7，标准一直在涨，但你的路由器不会自己升级。",
+      "visual": {
+        "kind": "timeline",
+        "milestones": [
+          { "year": "2009", "label": "802.11n", "detail": "Wi-Fi 4" },
+          { "year": "2013", "label": "802.11ac", "detail": "Wi-Fi 5" },
+          { "year": "2019", "label": "802.11ax", "detail": "Wi-Fi 6" },
+          { "year": "2024", "label": "802.11be", "detail": "Wi-Fi 7" }
+        ]
+      }
+    },
+    {
+      "id": "age",
+      "transition": "fade",
+      "narration": "五年，很多家庭的路由器就没换过了。",
+      "visual": {
+        "kind": "stat",
+        "value": 5,
+        "unit": "年",
+        "label": "很多路由器没换过的年头"
+      }
+    },
+    {
+      "id": "turn",
+      "transition": "blurSlide",
+      "narration": "所以下次觉得卡，先别怪宽带。",
+      "visual": {
+        "kind": "kinetic",
+        "words": ["先别怪宽带"],
+        "emphasis": ["先别怪宽带"]
+      }
+    },
+    {
+      "id": "fix",
+      "transition": "bookFlip",
+      "narration": "换个 5G 频段，关掉不需要的设备，或者，加一台 Mesh。",
+      "visual": {
+        "kind": "cards",
+        "items": [
+          { "title": "改连 5G 频段" },
+          { "title": "关掉不用的设备" },
+          { "title": "加一台 Mesh" }
+        ]
+      }
+    }
+  ]
+}

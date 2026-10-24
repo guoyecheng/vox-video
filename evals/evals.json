@@ -1,0 +1,154 @@
+{
+  "skill_name": "vox-video",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我做一条解说视频，主题是「为什么飞机起飞前要一直加速到那么快」。大概一分钟，要 VOX 那种感觉——节奏快、字大、有数字、有对比。最后给我 mp4 成片就行。",
+      "expected_output": "一条 45-90 秒的 VOX 风格中文解说视频 mp4，含中文配音；帧数由音频实测推导而非手写",
+      "files": [],
+      "expectations": [
+        "产出可播放的 mp4 成片，分辨率 1920x1080，且包含中文配音音轨",
+        "src/timeline.json 中每拍 durationInFrames = 该拍音频实测时长(padAfter/padBefore 除外) 向上取整，误差不超过 1 帧",
+        "除 timeline.json 外，源码里没有手写的拍长帧数常量（Root.tsx 的 durationInFrames 必须绑定 timeline.totalFrames）",
+        "至少用到 3 种不同的视觉组件 kind（kinetic/stat/quote/compare/timeline/cards/image 中任意组合）",
+        "public/audio/ 下每个有旁白的 beat 都有一个对应的 mp3，且总时长与成片时长一致",
+        "成片总时长在 45 到 90 秒之间",
+        "第一个 beat 的 hook 在 4 秒内进入，且旁白包含一个反常识的事实或提问"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "下面这段是我写好的旁白稿，直接做成视频，文案一个字都不要改：\n\n为什么夜空是黑色的？因为星星一直在发光，只是太远了。光要走很多年才能到我们眼睛，而宇宙已经膨胀了上百亿年。你看猎户座的星光，是一千六百年前出发的。宇宙在变大，光在路上被拉长，颜色就散了，所以我们看到的是黑的。\n\n要 VOX 风格，最后给我 mp4。",
+      "expected_output": "严格使用用户原文作为旁白的解说视频 mp4；文案不得被改写",
+      "files": [],
+      "expectations": [
+        "产出可播放的 mp4 成片，含中文配音",
+        "script.json 中每拍 narration 拼接后的文本与用户提供的文稿逐字一致（允许在标点处切分，不允许增删改任何字）",
+        "文稿被切分成 3 到 7 个 beat",
+        "至少用到 2 种不同的视觉组件 kind",
+        "旁白里出现的数字（一千六百 / 上百亿）用上了对应的大字或数字卡片视觉"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "解说稿我有了，但其中一拍我想放一个流程图：快递从你下单开始，经历「仓库分拣 → 干线运输 → 派送」三个环节，每个环节之间要有箭头连起来。现有那套组件好像没有能直接用的，给我加一个。",
+      "expected_output": "新增一个流程图组件并接入视觉注册表，能正常渲染",
+      "files": [],
+      "expectations": [
+        "新增了组件文件，且已注册进 src/visuals.tsx 的 REGISTRY 并可被 visual.kind 引用",
+        "新组件渲染出三个环节节点和它们之间的箭头连接",
+        "新组件内部的动画由 useCurrentFrame() 驱动（源码中不含 CSS transition/animation/@keyframes）",
+        "新组件通过 resolveWordTimings 或 useBeatWords 与旁白词级时间戳关联，而不是纯按固定帧数",
+        "原有组件未被破坏：整条视频能成功渲染出 mp4"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "帮我做一条解说视频，主题是「长安城为什么能装下上百万人」，一分钟，要 VOX 那种感觉。最后给我 mp4。",
+      "expected_output": "一条 VOX 风格中文解说视频 mp4，画面是纸艺拼贴风格，且不出现整幅抖动",
+      "files": [],
+      "expectations": [
+        "产出可播放的 mp4 成片，含中文配音音轨",
+        "src/components/PaperStage.tsx 使用漂移（sway）而不是整幅定格抖动来制造运动：源码里没有对整幅施加每 2-3 帧换位的 jitter",
+        "全片用 check_motion.py 检查时，逐拍均差没有低于 1.5 的死拍",
+        "没有为了压低「近乎静止占比」而给整幅加高频位移（静止占比高于 25% 不算失败，判定只看逐拍均差和九宫格 CV）",
+        "源文件里没有手写的拍长帧数常量，timeline.json 的 durationInFrames 全部由音频实测推导"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "解说稿写好了，但每一拍我都想要有景深的画面：远景、中景、近景各一层，镜头推进的时候它们要有速度差。别用整幅抖动的办法凑。",
+      "expected_output": "用分层背景板（visual.layers）实现景深与视差，而不是整幅位移",
+      "files": [],
+      "expectations": [
+        "script.json 里有拍使用了 visual.layers，且每层都给了 src / depth / band / y",
+        "各层 depth 不同（远层小、近层大），代码里按 depth 算出了不同的视差系数",
+        "层有 band 时一定也给了 y（不给的话所有层会堆在画面底部，远景被中景盖死）",
+        "layers 引用的图片文件真实存在于 public/ 下（preflight.py 检查通过）",
+        "没有用整幅定格抖动来制造「在动」的效果"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "把这段稿子做成视频：为什么海水是咸的。因为水会蒸发，盐留了下来。地球上的水蒸发了几十亿年，盐就越积越厚。",
+      "expected_output": "走完整流程：体检 → 配音（先停）→ 抽帧（再停）→ 渲染 → 体检",
+      "files": [],
+      "expectations": [
+        "跑 npm run tts 之前，先运行了 preflight.py 检查 script.json",
+        "跑 npm run tts 之前，把 beat 表和旁白里所有具体事实/数字的出处列给用户，并停下来等确认（没有直接一路配音）",
+        "整片渲染之前，运行了 stills.py 抽帧（每拍一张或用 --sheet 出联络表），把静帧给用户看并停下来等确认",
+        "没有手写 --frame=<beat.from + 30> 去数帧号，而是用 stills.py 算",
+        "渲染之后运行了 check_motion.py 和 verify_sync.py",
+        "改版之后如果重渲，用 check_motion.py --baseline 和旧成片做了逐拍对比"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "我在改这套模板的纸艺组件，改完想同步到已有的几个项目里，又怕把项目自己的 script.json 冲掉。",
+      "expected_output": "用 sync_template.py 做受控同步，不碰项目私有文件",
+      "files": [],
+      "expectations": [
+        "使用 scripts/sync_template.py 同步，而不是手工复制文件",
+        "同步范围不包括项目私有的文件：script.json、src/timeline.json、public/img、public/audio、out、node_modules",
+        "先 --check 看清哪些文件有差异，再决定往哪个方向同步",
+        "从项目同步回模板时，先备份被覆盖的模板文件"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "帮我做一条一分钟的解说视频，主题是「为什么古代打仗要排队」。要 VOX 那种感觉。",
+      "expected_output": "一条带叙事弧、逐拍运镜、配乐让路的 VOX 风格中文解说视频 mp4",
+      "files": [],
+      "expectations": [
+        "script.json 顶层写了 arc（叙事弧），取值在 references/arcs.md 列出的合法集合里",
+        "相邻两拍的 visual.camera 不相同（反单调检查项）",
+        "每一拍都写了 visual.elementMotion（轴二），没有哪一拍是两根轴少一根",
+        "每拍用了不同的 camera 取值中的至少 3 种（push_in/pull_out/pan/tilt/parallax/whip/static）",
+        "如果片子带配乐：music.src 指向 public/ 下真实存在的文件，且 gain ≤ 0.45、duck ≥ 0.4",
+        "配乐在有人说话时确实让路：说话段与间隙段的音乐电平比值 > 1.3（差分渲染实测，不是听感判断）",
+        "开渲前跑过 preflight.py 且判定为通过"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "我想要纸片拼贴的风格，但觉得现在这个米色太温吞了，给我看看别的样子选一个。",
+      "expected_output": "同一条 brief 在多套风格预设下各出一张图 + 一张对比联络表，由用户挑选",
+      "files": [],
+      "expectations": [
+        "用 bakeoff.py 跑出多套风格（至少 3 套）的对比图，且都基于同一条 brief",
+        "所有对比图用同一个 seed（风格是唯一变量）",
+        "产出 HTML 对比表并展示给用户，没有替用户拍板",
+        "对比图覆盖了内置的纸艺系预设（paper / paper-ink / paper-newsprint / paper-poster / paper-zine / paper-washi）中的若干套",
+        "挑完之后把预设名写进 images.json 的 style_preset"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "我在项目里新加了一个组件文件 src/music.tsx，想把它同步回模板，好让别的项目也用上。",
+      "expected_output": "项目 → 模板的单向回灌，且模板里出现新文件、既有项目私有文件不被覆盖",
+      "files": [],
+      "expectations": [
+        "sync_template.py --pull --force 之后，模板里出现了项目独有的新文件 src/music.tsx",
+        "模板被覆盖的旧版本自动备份到 .backup/<时间戳>/ 下",
+        "项目的 script.json / images.json / public/img / public/audio / out 等私有文件既没被覆盖也没被删除",
+        "回灌之后其它项目跑 --push 能拿到新文件"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "这一拍讲一支箭射穿城防，我有一张画好裂缝的图 img/shot-wall.png（16:9）。别用整幅推镜了，我想让图裂成几块飞进来、拼回整张——像被撕开又贴回去。声音不用改，只改这一拍的画面。",
+      "expected_output": "该拍改用碎片拼贴：pieceBase + 多块 pieces，块飞入拼合，底图不重影、接缝不漏纸色",
+      "files": [],
+      "expectations": [
+        "该拍 visual 里有 pieceBase 且没有同时写 image",
+        "pieces 至少 2 块，各块 x/y/w/h 之和覆盖整个画幅（面积合计 1.0±0.01）",
+        "pieces 每块都有合法 enter（fly_left/fly_right/fly_up/drop/slap/pop）和 at（拍内帧）",
+        "挖洞实现用的是 clip-path: path(evenodd, ...)，源码中没有 mask-image / maskImage 的 data-URI 写法",
+        "PieceLayer 根节点的 inset 用 STAGE_INFLATE 抵消 PaperStage 的底纸外扩",
+        "块与块之间有 PAD 重叠（≥0.003），且投影在落位后归零",
+        "只重渲染这一拍抽帧可见：首帧是挖了洞的底图，末帧是无缝的完整图",
+        "该拍的旁白音频与改动前一致（未重跑 TTS 也能对上），timeline 里该拍 durationInFrames 未变"
+      ]
+    }
+  ]
+}
