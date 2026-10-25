@@ -163,6 +163,19 @@
         "preflight.py 通过（shots 结构、枚举、kind 合法）",
         "check_rhythm.py 无镜头级相邻配方重复"
       ]
+    },
+    {
+      "id": 13,
+      "prompt": "这条片子里有一拍要表现「井盖掉进洞里」：方盖先悬在洞口上方，旁白念到「井盖」时落下来，念到「掉进」时真的坠进洞里消失。要真的是在洞的后面和里面，不要用 2D 缩放假装。其它拍保持现有的纸艺风格，最后给我 mp4。",
+      "expected_output": "仅该拍使用 3D 纸艺舞台的解说视频 mp4，方盖与洞口有真实前后遮挡",
+      "expectations": [
+        "script.json 里只有目标拍写了 visual.stage3d，其它拍没有 stage3d（3D 是按拍可选的）",
+        "stage3d.pieces 的 x/y/w 使用世界单位（16:9 画幅约 7.2 x 4.05），不是 2D cutouts 的 0-1 比例",
+        "方盖的 at/fall 锚在旁白原词上：成片里方盖在念到「井盖」之后才落下，念到「掉进」之后才下沉出画",
+        "该拍的字幕、kind 组件和特效仍正常压在 3D 画面上，没有被 3D 层盖掉",
+        "项目装齐 three、@react-three/fiber、@remotion/three（版本与 remotion 一致），tsc 通过且能渲染出 mp4",
+        "若该拍同时残留了 cutouts/pieces/image，preflight 有对应提醒，且确认这些 2D 元素没有出现在成片里"
+      ]
     }
   ]
 }

@@ -167,7 +167,8 @@ npm run preflight          # 等价于 python "<skill>/scripts/preflight.py" --p
 ```
 
 它查 id 重复、kind 拼错、缺必填字段、图文件不存在、层少 `y`、枚举值写错、字体缺失、
-弧名不合法、`camera`/`vfx` 写错、配乐文件不存在。有错先改，别去配音。
+弧名不合法、`camera`/`vfx` 写错、配乐文件不存在、`stage3d` 坐标量级和三条 3D 依赖。
+有错先改，别去配音。
 
 **写稿之前先选一条叙事弧**（`arc` 字段）。弧决定 beat 的**顺序和形状**，
 组件决定 beat 的**长相**——两件事分开想。14 条弧、拍数数字表、hook 句式库、
@@ -458,6 +459,43 @@ VOX 视频看着"信息密度高"，本质是**剪辑节奏快**。60 秒的片�
 基元表（`PaperSheet` / `Tape` / `roughEdge` / `bandEdge` / `fiberStyle` …）、props
 和幅度参数见 `references/components.md#背景与常驻件`。
 
+### 3D 纸艺舞台（可选，`stage3d`）
+
+默认舞台是 2D 的 `PaperStage`。需要**真前后遮挡**时——方盖掉进洞里、纸片从另一张
+纸背后转出来、镜头穿过一层纸——给单拍加 `visual.stage3d`：这一拍的底纸/纸片/胶带
+换成 React Three Fiber 的真 Z 轴，文字仍由 DOM 排（中文字形在 3D 里没有胜算）。
+
+```jsonc
+"visual": {
+  "kind": "kinetic",
+  "stage3d": {
+    "camera": "push_in", "punch": 0.7, "mapSrc": "img/map.png",
+    "pieces": [
+      { "src": "img/hole-cut.png", "x": 1.3,  "y": -0.05, "z": -0.45, "w": 2.65 },
+      { "src": "img/lid-cut.png",  "x": 1.22, "y": 0.56,  "z": 0.42,  "w": 1.0,
+        "enter": "drop", "at": "井盖", "fall": "掉进", "alphaCut": 0.9 }
+    ]
+  }
+}
+```
+
+- **坐标是世界单位**（16:9 画幅约 7.2 × 4.05），`x/y` 是纸片**中心**、`w` 是宽度。
+  抄 2D `cutouts` 的 0-1 坐标会让纸片缩在画面正中一小团，`preflight` 会提醒。
+- `at` / `spinAt` / `fall` 和 `cutouts` 一样写**旁白原词**；命中后提前 2 帧起手。
+- `camera` 只支持 `push_in` / `pull_out` / `pan` / `static`，其它值回落 `push_in`。
+- 这一拍的 `cutouts` / `pieceBase`+`pieces` / `image` / `layers` **不会渲染**
+  （不报错）；`kind` 组件、字幕、批注、特效、转场照常压在 3D 上。`quote` 是深色
+  纸台，别和 3D 混用。
+- **按拍开**，没写 `stage3d` 的拍还是 2D，混排没问题。
+- 老项目要补依赖：`npm install three @react-three/fiber @remotion/three@4.0.535`；
+  模板新建的项目已经带上。`preflight` 会查这三件套在不在。
+
+> 3D 不是"更高级"的默认选择。渲染不慢，但慢镜头下画面反而更**静**——PPT 感靠在
+> 拍内安排词级动作和切镜，不在 Z 轴。只在真的需要遮挡关系时用它。
+
+字段全表、`marks` 红笔和四条实现坑（uniform 冻结、alpha 裁切、词锚点规则）见
+`references/components.md#3d-纸艺舞台stage3dtsx`。
+
 ## 素材图（ComfyUI）
 
 配图是可选步骤：没有 ComfyUI 也能出片，`ImageCard` 会退化成斜纹占位板。
@@ -721,6 +759,10 @@ npx remotion render VoxVideo out/cover.png --frame=45   # 抽一帧做封面
 | **画面一直在抖 / 整片像在颤** | 整幅用了 `jitter()`（每 2-3 帧重摆）。换 `sway()`：连续低频正弦，6px / 240 帧；`jitter` 只留给个别小标签 |
 | **画面整块发米白、纸片没边界** | 底纸和纸片都接近白。底纸用 `COLORS.stage`（比 `PAPER.sheet` 深一档），纸片 `PAPER.sheet` |
 | **文字横向叠成三四个残影** | `mix-blend-mode` + 祖先 `transform` 触发 Chromium 合成层缓存 bug。去掉混合模式，改普通 alpha |
+| **3D 纸片定格在入场那一帧** | shader uniform 被原地改值，多进程渲染会冻结。每帧新建 uniforms 对象 |
+| **3D 纸片边缘一圈灰影** | 素材把烘焙投影做进了 alpha。`alphaCut: 0.9` 裁掉灰影，投影改用 `shadow` |
+| **用了 `stage3d` 但 tsc / 渲染找不到模块** | 老项目没装 `three`、`@react-three/fiber`、`@remotion/three`（版本要和 `remotion` 一致） |
+| **3D 纸片没按词动，一开场就掉** | `at` 在旁白里找不到，退回拍开头。改词或换成旁白里原样出现的片段，`preflight` 会提醒 |
 
 字体、`spring` NaN、`clockWipe` 尺寸、webpack 路径、首帧闪、配图发品红等完整排查见 `references/troubleshooting.md`；ComfyUI 卡 pending / `DEVICE_LOST` 见 `references/comfyui.md`。
 
@@ -762,7 +804,7 @@ python "<skill>/scripts/sync_template.py" --project "<项目>" --pull --force  #
 
 | 脚本 | 什么时候跑 | 干什么 |
 |---|---|---|
-| `scripts/preflight.py` | 配音**之前** | 查 script.json 的错：id 重复、kind 拼错、图不存在、层少 `y`、枚举值写错、字体缺失 |
+| `scripts/preflight.py` | 配音**之前** | 查 script.json 的错：id 重复、kind 拼错、图不存在、层少 `y`、枚举值写错、字体缺失、stage3d 坐标与依赖 |
 | `scripts/vox_tts.py` | 闸门 A 之后 | 合成配音 + 生成 `src/timeline.json`（帧数由音频实测推导） |
 | `scripts/stills.py` | 闸门 B（渲染之前） | 按 beat 抽关键帧 + 联络表；`sheet.png` 直接发用户，`sheet.html` 可放大看标签 |
 | `scripts/check_rhythm.py` | 闸门 B 之前 | 查节奏单调、字号太小、类 CSS 动画 |

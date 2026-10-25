@@ -264,6 +264,88 @@ def test_annotations_wired_and_validated() -> str:
     return "类型/组件/接线/校验一致"
 
 
+def test_stage3d_wired_and_validated() -> str:
+    """stage3d：类型 → 3D 组件 → visuals 接线 → preflight 校验 → 依赖，五处对上。"""
+    declared = preflight._enum_from_code(TEMPLATE, "Stage3DCamera") or set()
+    assert declared == preflight.STAGE3D_CAMERAS, \
+        f"Stage3DCamera 与 preflight 枚举不一致：{declared ^ preflight.STAGE3D_CAMERAS}"
+
+    timeline = (TEMPLATE / "src" / "timeline.ts").read_text(encoding="utf-8")
+    for needle in ("export type Stage3DSpec", "export type Stage3DPieceSpec",
+                   "stage3d?: Stage3DSpec"):
+        assert needle in timeline, f"timeline.ts 缺 {needle}"
+    assert '"drop" | "rise" | "pop"' in timeline, "纸片 enter 枚举变了，preflight 没跟着改"
+
+    comp = TEMPLATE / "src" / "stage3d.tsx"
+    assert comp.exists(), "缺 stage3d.tsx"
+    src = comp.read_text(encoding="utf-8")
+    for needle in ("ThreeCanvas", "resolveWordTimings", "useCurrentFrame",
+                   "uCut", "piece.fall", "uShadow"):
+        assert needle in src, f"stage3d.tsx 缺 {needle}"
+    # uniform 原地改值会在逐帧多进程渲染里冻结——必须每帧新建对象
+    assert "const uniforms = { ...baseUniforms" in src, \
+        "找不到每帧新建 uniforms 的写法，画面可能定格在第一帧"
+    assert "uniforms.uOpacity.value =" not in src, \
+        "stage3d.tsx 原地改 uniform（会导致画面定格在第一帧）"
+
+    visuals = (TEMPLATE / "src" / "visuals.tsx").read_text(encoding="utf-8")
+    for needle in ("import { Stage3D }", "<Stage3D", "beat.visual.stage3d"):
+        assert needle in visuals, f"visuals.tsx 缺 {needle}"
+
+    pkg = (TEMPLATE / "package.json").read_text(encoding="utf-8")
+    for dep in ("@react-three/fiber", "@remotion/three", "\"three\""):
+        assert dep in pkg, f"模板 package.json 缺依赖 {dep}"
+
+    pre = (ROOT / "scripts" / "preflight.py").read_text(encoding="utf-8")
+    assert "check_stage3d(project, rep, where, visual, narration)" in pre, \
+        "preflight 没接上 check_stage3d"
+
+    kinds = preflight.kinds_from_code(TEMPLATE) or preflight.KINDS
+    motions = preflight.motions_from_code(TEMPLATE) or preflight.MOTION_RECIPES
+    layouts = preflight.layouts_from_code(TEMPLATE) or preflight.LAYOUT_MODES
+
+    def run(visual: dict, narration: str = "方的井盖，会掉进自己的洞里。"):
+        rep = preflight.Report()
+        preflight.check_visual(Path("."), rep, "beat0", visual, narration,
+                               kinds, motions, layouts)
+        return rep
+
+    good = {"kind": "kinetic", "stage3d": {"camera": "push_in", "pieces": [
+        {"src": "https://example.invalid/lid-cut.png", "x": 1.22, "y": 0.56,
+         "z": 0.42, "w": 1.0, "enter": "drop", "at": "井盖", "fall": "掉进",
+         "marks": [{"w": 1.5, "h": 0.03, "rot": 44, "at": "对角"}]},
+        {"src": "https://example.invalid/hole-cut.png", "x": 1.3, "y": -0.05,
+         "z": -0.45, "w": 2.65, "hole": 1},
+    ]}}
+    rep = run(good)
+    assert not rep.errors, f"合法 stage3d 被误报：{rep.errors}"
+
+    scaled = {"kind": "kinetic", "stage3d": {"pieces": [
+        {"src": "https://example.invalid/x-cut.png", "x": 0.5, "y": 0.5, "w": 0.3},
+    ]}}
+    assert any("画幅比例" in w for w in run(scaled).warns), "抄 0-1 坐标没提醒"
+
+    bad = {"kind": "kinetic", "stage3d": {"camera": "tilt", "pieces": [
+        {"src": "https://example.invalid/y-cut.png", "x": 0, "y": 0, "w": 2,
+         "enter": "explode", "z": -5},
+    ]}}
+    errs = run(bad).errors
+    assert any("camera" in e for e in errs), f"非法 camera 没报错：{errs}"
+    assert any("enter" in e for e in errs), f"非法 enter 没报错：{errs}"
+    assert any("后面" in w for w in run(bad).warns), "z 落到背景纸后面没提醒"
+
+    lost = {"kind": "kinetic", "stage3d": {"pieces": [
+        {"src": "https://example.invalid/z-cut.png", "x": 0, "y": 0, "w": 2,
+         "at": "旁白里没有的词"},
+    ]}}
+    assert any("找不到" in w for w in run(lost).warns), "锚词脱拍没给警告"
+
+    mixed = {"kind": "kinetic", "cutouts": [{"src": "https://example.invalid/a-cut.png",
+                                             "x": 0.5, "y": 0.5, "w": 0.3}], **good}
+    assert any("不会渲染" in w for w in run(mixed).warns), "cutouts 与 stage3d 并存没提醒"
+    return "类型/依赖/接线/校验一致"
+
+
 def test_doc_paths_exist() -> str:
     """文档里写到的 references/ 和 scripts/ 路径必须真的存在。"""
     missing = set()
@@ -688,6 +770,7 @@ TESTS = [
     test_cutout_keying_keeps_enclosed_colors,
     test_cutouts_wired_and_validated,
     test_annotations_wired_and_validated,
+    test_stage3d_wired_and_validated,
     test_doc_paths_exist,
     test_doc_anchors_resolve,
 ]

@@ -41,6 +41,7 @@ import {
   useStage,
 } from "./components";
 import { AmbientLight, Confetti, Flash, LightSweep, Starburst, useAmbient, useCamera } from "./effects";
+import { Stage3D } from "./stage3d";
 
 export type VisualProps = {
   beat: Beat;
@@ -95,43 +96,27 @@ export const BeatVisual: React.FC<{
 
   // 运镜（轴一）：整幅怎么动。有运镜时关掉 ambient 自己的 zoom——
   // 两个缩放叠起来会把边缘的字切掉（推近 3.5% + 3.2% ≈ 6.7%）。
+  // 3D 舞台的运镜在 Three.js 里完成，DOM 层不再套 transform，否则会叠两次。
+  const is3D = Boolean(beat.visual.stage3d);
   const cameraMove = beat.visual.camera ?? "push_in";
   const camera = useCamera(beat.durationInFrames, cameraMove, index);
   const ambient = useAmbient(
     beat.durationInFrames,
     index,
     ambientStrength,
-    cameraMove === "static",
+    is3D || cameraMove === "static",
   );
 
-  // 抠图元素：back 在内容层下面（洞、底图），front 压在内文之上（盖在字前的道具）
-  const cutouts = beat.visual.cutouts ?? [];
+  // 抠图元素：back 在内容层下面（洞、底图），front 压在内文之上（盖在字前的道具）。
+  // 3D 舞台自己画纸片，再渲染 cutouts 会重复一层。
+  const cutouts = is3D ? [] : beat.visual.cutouts ?? [];
   const backCutouts = cutouts.filter((c) => !c.front);
   const frontCutouts = cutouts.filter((c) => c.front);
 
-  return (
-    <AbsoluteFill>
-      {/* 运镜层：整幅（背景 + 内容）一起动。角标和章节进度条不在这一层里——
-          它们是"屏幕上的 UI"，不该被镜头甩走，也不该被裁掉。 */}
-      <AbsoluteFill style={{ overflow: "hidden" }}>
-        <AbsoluteFill
-          style={{
-            transform: camera.transform || undefined,
-            filter: camera.blur > 0.05 ? `blur(${camera.blur.toFixed(2)}px)` : undefined,
-          }}
-        >
-        <PaperStage
-          accent={accent}
-          tone={tone}
-          phaseOffset={beat.from}
-          image={beat.visual.image}
-          imageLayout={beat.visual.imageLayout}
-          imageWash={beat.visual.imageWash}
-          layers={beat.visual.layers}
-        >
-
+  const stageContent = (
+    <>
       {/* 碎片拼贴：底图挖洞 + 几块飞入组装。放在冲击放射之后、内容之前。 */}
-      {beat.visual.pieceBase && beat.visual.pieces?.length ? (
+      {!is3D && beat.visual.pieceBase && beat.visual.pieces?.length ? (
         <PieceLayer
           base={beat.visual.pieceBase}
           pieces={beat.visual.pieces}
@@ -188,12 +173,13 @@ export const BeatVisual: React.FC<{
       {frontCutouts.length ? <CutoutLayer beat={beat} items={frontCutouts} /> : null}
 
       {/* 红笔批注：画在内容之上、字幕之下。它跟纸一起被镜头带走，
-          所以放在 PaperStage 里面，而不是像报头那样固定在画幅上。 */}
+          所以放在纸台里面，而不是像报头那样固定在画幅上。 */}
       {beat.visual.annotations?.length ? <NoteLayer notes={beat.visual.annotations} /> : null}
 
       {/* 漂移柔光只在没有配图时开：它是两块 accent 色斑，压在照片上会变成
-          一层品红色滤镜，整张图"脏"掉。照片自己就有明暗层次。 */}
-      {beat.visual.image || beat.visual.layers?.length ? null : (
+          一层品红色滤镜，整张图"脏"掉。照片自己就有明暗层次。3D 有真投影，
+          再加一层柔光会糊。 */}
+      {is3D || beat.visual.image || beat.visual.layers?.length ? null : (
         <AmbientLight seed={index} strength={ambientStrength} />
       )}
 
@@ -209,17 +195,49 @@ export const BeatVisual: React.FC<{
         />
       ) : null}
 
-          {/* 纸屑雨：撒在最上层（小小的纸片压住字没关系） */}
-          {beat.visual.vfx === "confetti" ? (
-            <Confetti
-              duration={Math.min(80, beat.durationInFrames - 6)}
-              count={46}
-              seed={index}
-              delay={4}
-            />
-          ) : null}
-        </PaperStage>
-        </AbsoluteFill>
+      {/* 纸屑雨：撒在最上层（小小的纸片压住字没关系） */}
+      {beat.visual.vfx === "confetti" ? (
+        <Confetti
+          duration={Math.min(80, beat.durationInFrames - 6)}
+          count={46}
+          seed={index}
+          delay={4}
+        />
+      ) : null}
+    </>
+  );
+
+  return (
+    <AbsoluteFill>
+      {/* 运镜层：整幅（背景 + 内容）一起动。角标和章节进度条不在这一层里——
+          它们是"屏幕上的 UI"，不该被镜头甩走，也不该被裁掉。 */}
+      <AbsoluteFill style={{ overflow: "hidden" }}>
+        {beat.visual.stage3d ? (
+          <>
+            {/* 运镜在 3D 里完成；DOM 内容原样压在上面，不再套 2D transform */}
+            <Stage3D beat={beat} spec={beat.visual.stage3d} />
+            <AbsoluteFill>{stageContent}</AbsoluteFill>
+          </>
+        ) : (
+          <AbsoluteFill
+            style={{
+              transform: camera.transform || undefined,
+              filter: camera.blur > 0.05 ? `blur(${camera.blur.toFixed(2)}px)` : undefined,
+            }}
+          >
+            <PaperStage
+              accent={accent}
+              tone={tone}
+              phaseOffset={beat.from}
+              image={beat.visual.image}
+              imageLayout={beat.visual.imageLayout}
+              imageWash={beat.visual.imageWash}
+              layers={beat.visual.layers}
+            >
+              {stageContent}
+            </PaperStage>
+          </AbsoluteFill>
+        )}
       </AbsoluteFill>
 
       {/* 报头：画幅上的固定 UI，不受运镜影响。只有片名，没有页码 */}

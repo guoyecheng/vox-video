@@ -372,6 +372,145 @@ def check_cutouts(project: Path, rep: Report, where: str, visual: dict, narratio
             rep.warn(w, "at 和 fall 是同一个词：元素会在入场的同一帧开始坠落")
 
 
+STAGE3D_CAMERAS = {"push_in", "pull_out", "pan", "static"}
+STAGE3D_ENTERS = {"drop", "rise", "pop"}
+
+
+def check_stage3d(project: Path, rep: Report, where: str, visual: dict, narration: str) -> None:
+    """3D 纸艺舞台（visual.stage3d）的校验。
+
+    坐标是**世界单位**（16:9 画幅约 7.2 × 4.05），不是 0-1 比例；
+    x/y 是纸片中心。最常见的翻车是直接抄 2D cutouts 的 0-1 坐标——
+    纸片会全部缩在画面正中一小团，所以这里单独校验量级。
+    """
+    stage = visual.get("stage3d")
+    if stage is None:
+        return
+    if not isinstance(stage, dict):
+        rep.err(f"{where}.stage3d", "不是一个对象")
+        return
+
+    if visual.get("cutouts"):
+        rep.warn(where, "stage3d 生效时 cutouts 不会渲染——两套元素层只能选一套")
+    if visual.get("pieceBase") or visual.get("pieces"):
+        rep.warn(where, "stage3d 生效时碎片拼贴（pieceBase/pieces）不会渲染")
+    if visual.get("image") or visual.get("layers"):
+        rep.warn(where, "stage3d 生效时 2D 配图 / 分层背景板不会渲染")
+    if visual.get("kind") == "quote":
+        rep.warn(where, "quote 拍用深色纸台；stage3d 目前只有浅色纸底")
+
+    cam = stage.get("camera")
+    if cam is None:
+        cam2d = visual.get("camera")
+        if cam2d in {"tilt", "parallax", "whip"}:
+            rep.warn(f"{where}.stage3d.camera",
+                     f"3D 不支持 camera='{cam2d}'，会回落到 push_in")
+    elif cam not in STAGE3D_CAMERAS:
+        rep.err(f"{where}.stage3d.camera",
+                f"只能是 {', '.join(sorted(STAGE3D_CAMERAS))}，现在 {cam!r}")
+
+    map_src = stage.get("mapSrc")
+    if map_src:
+        check_asset(project, rep, f"{where}.stage3d.mapSrc", map_src)
+
+    pieces = stage.get("pieces")
+    if not isinstance(pieces, list) or not pieces:
+        rep.err(f"{where}.stage3d.pieces", "至少要有一张纸片")
+        return
+
+    plain = narration.replace(" ", "").replace("\u3000", "")
+    for i, p in enumerate(pieces):
+        w = f"{where}.stage3d.pieces[{i}]"
+        if not isinstance(p, dict):
+            rep.err(w, "不是一个对象")
+            continue
+        src = p.get("src")
+        if not src:
+            rep.err(w, "少了 src")
+        else:
+            check_asset(project, rep, w, src)
+
+        for k in ("x", "y"):
+            v = p.get(k)
+            if not isinstance(v, (int, float)):
+                rep.err(w, f"{k} 是世界坐标中心（约 -3.6…3.6 / -2…2），现在是 {v!r}")
+            elif abs(v) > 6:
+                rep.warn(w, f"{k}={v} 明显超出画幅（世界单位约 ±3.6），确认用错了 0-1 比例")
+        width = p.get("w")
+        if not isinstance(width, (int, float)) or width <= 0:
+            rep.err(w, f"w 是世界单位宽度（画幅约 7.2），现在是 {width!r}")
+        elif width < 1:
+            rep.warn(w, f"w={width} 更像画幅比例；3D 用世界单位，满幅约 7.2")
+        else:
+            x = p.get("x")
+            if isinstance(x, (int, float)) and abs(x) - width / 2 > 4.6:
+                rep.warn(w, "纸片完全在画外（世界单位 ±4.6 之外），确认不是坐标写错")
+
+        z = p.get("z", 0)
+        if not isinstance(z, (int, float)):
+            rep.err(w, f"z 应该是数字，现在是 {z!r}")
+        elif z < -2.9:
+            rep.warn(w, f"z={z} 在背景纸（约 -3）后面，会被完全挡住")
+
+        enter = p.get("enter")
+        if enter is not None and enter not in STAGE3D_ENTERS:
+            rep.err(w, f"enter 只能是 {', '.join(sorted(STAGE3D_ENTERS))}，现在 {enter}")
+
+        for key in ("at", "spinAt", "fall"):
+            word = p.get(key)
+            if word is None:
+                continue
+            if not isinstance(word, str) or not word.strip():
+                rep.err(w, f"{key} 应该是旁白里的词，现在是 {word!r}")
+            elif word.replace(" ", "") not in plain:
+                rep.warn(w, f"{key}=\"{word}\" 在旁白里找不到——会按拍长均匀铺开，动效脱拍")
+
+        for key in ("wash", "gray", "hole", "alphaCut"):
+            v = p.get(key)
+            if v is not None and (not isinstance(v, (int, float)) or not (0 <= v <= 1)):
+                rep.err(w, f"{key} 应该在 [0, 1]，现在是 {v!r}")
+        for key in ("shadow", "drift"):
+            v = p.get(key)
+            if v is not None and (not isinstance(v, (int, float)) or v < 0):
+                rep.err(w, f"{key} 是不小于 0 的数，现在是 {v!r}")
+        blend = p.get("blend")
+        if blend is not None and blend not in ("normal", "multiply"):
+            rep.err(w, f"blend 只能是 normal / multiply，现在 {blend}")
+        rot = p.get("rot")
+        if rot is not None and (not isinstance(rot, (int, float)) or abs(rot) > 180):
+            rep.err(w, f"rot 应该在 [-180, 180] 度，现在是 {rot}")
+
+        marks = p.get("marks")
+        if marks is not None:
+            if not isinstance(marks, list):
+                rep.err(f"{w}.marks", "不是数组")
+                continue
+            for j, m in enumerate(marks):
+                mw = f"{w}.marks[{j}]"
+                if not isinstance(m, dict):
+                    rep.err(mw, "不是一个对象")
+                    continue
+                if not isinstance(m.get("w"), (int, float)) or m["w"] <= 0:
+                    rep.err(mw, f"w 应该是正数，现在是 {m.get('w')!r}")
+                word = m.get("at")
+                if word and (not isinstance(word, str) or word.replace(" ", "") not in plain):
+                    rep.warn(mw, f"at=\"{word}\" 在旁白里找不到——会按拍长均匀铺开，脱拍")
+
+    tapes = stage.get("tapes")
+    if tapes is not None:
+        if not isinstance(tapes, list):
+            rep.err(f"{where}.stage3d.tapes", "不是数组")
+        else:
+            for i, t in enumerate(tapes):
+                tw = f"{where}.stage3d.tapes[{i}]"
+                if not isinstance(t, dict):
+                    rep.err(tw, "不是一个对象")
+                    continue
+                for k in ("x", "y", "z", "w", "h", "rot"):
+                    if not isinstance(t.get(k), (int, float)):
+                        rep.err(tw, f"{k} 应该是数字，现在是 {t.get(k)!r}")
+
+
 NOTE_KINDS = {"arrow", "circle", "measure", "tag", "stamp", "shape"}
 NOTE_SHAPES = {"square", "circle", "triangle", "reuleaux", "hex"}
 
@@ -636,6 +775,7 @@ def check_visual(project: Path, rep: Report, where: str, visual: dict, narration
     check_layers(project, rep, where, visual)
     check_pieces(project, rep, where, visual)
     check_cutouts(project, rep, where, visual, narration)
+    check_stage3d(project, rep, where, visual, narration)
     check_notes(rep, where, visual)
     check_shots(where, visual, motions, layouts, rep)
 
@@ -745,12 +885,24 @@ def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
     return data
 
 
-def check_env(project: Path, rep: Report) -> None:
+def check_env(project: Path, rep: Report, data: dict | None = None) -> None:
     for f in FONTS:
         if not (project / f).exists():
             rep.err(f, "字体文件不在（缺了中文会静默回落系统雅黑）")
     if not (project / "node_modules").exists():
         rep.warn("node_modules", "不存在，先跑一次 npm install")
+        return
+    # 老项目是 scaffold 出来的，package.json 不会随 sync 更新——3D 依赖得自己补
+    beats = (data or {}).get("beats") or []
+    uses_3d = any(isinstance(b, dict) and (b.get("visual") or {}).get("stage3d")
+                  for b in beats)
+    if uses_3d:
+        missing = [p for p in ("@remotion/three", "@react-three/fiber", "three")
+                   if not (project / "node_modules" / p).exists()]
+        if missing:
+            rep.err("node_modules", f"用了 stage3d 但缺依赖：{', '.join(missing)}"
+                                    "——跑 npm install three @react-three/fiber "
+                                    f"@remotion/three@{'4.0.535'}")
 
 
 def main() -> int:
@@ -783,7 +935,7 @@ def main() -> int:
     if layouts:
         print(f"[preflight] 版式变体从 src/timeline.ts 读到 {len(layouts)} 种")
     data = check_script(project, rep, kinds, transitions, motions, layouts)
-    check_env(project, rep)
+    check_env(project, rep, data)
 
     print(f"[preflight] 项目 {project}")
     if data:

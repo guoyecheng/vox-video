@@ -10,6 +10,7 @@
 - [CompareSplit](#comparesplit) · [TimelineRail](#timelinerail) · [CardStack](#cardstack) · [ImageCard](#imagecard)
 - [CaptionTrack](#captiontrack) — 常驻字幕轨，不由 `kind` 控制
 - [背景与常驻件](#背景与常驻件) · [特效层](#特效层) · [运镜层](#运镜层camera) · [入场配方层](#入场配方层motion) · [版式变体](#版式变体layout) · [配乐床](#配乐床musictsx)
+- [3D 纸艺舞台](#3d-纸艺舞台stage3dtsx) · [碎片拼贴层](#碎片拼贴层piecestsx) · [抠图元素层](#抠图元素层cutoutlayertsx) · [红笔批注层](#红笔批注层notelayertsx)
 - [共用工具](#共用工具) · [加新组件](#加一个新组件四个文件缺一不可)
 
 ---
@@ -738,6 +739,95 @@ PaperStage 对配图的处理。连续多拍不写 layout 时 `check_rhythm` 会
   存在）`check_shot_fit` 还会核对 `from`/`to` 没有越出这一拍的实测拍长——越界
   运行时会被 clamp，整镜静默消失。配方相邻重复由 `check_rhythm.check_shot_rhythm`
   跨拍检查；自动拆分的镜头数在脚本阶段未知，涉及自动值的接缝只提示不判失败。
+
+## 3D 纸艺舞台（`stage3d.tsx`）
+
+按拍的**可选**舞台：把 `PaperStage` 那层换成真的 Z 轴（React Three Fiber +
+`@remotion/three`），运镜时前后纸片有真正的位移和遮挡。文字排版仍留在 DOM——
+中文字形和可读性在 3D 里没有胜算，3D 只出底纸、纸片、胶带和尘埃。
+
+```jsonc
+"visual": {
+  "kind": "kinetic",
+  "stage3d": {
+    "camera": "push_in",          // 省略时跟随 visual.camera
+    "punch": 0.7,                 // 开场顿挫（世界单位）
+    "mapSrc": "img/map.png",      // 可选，底纸上的旧地图纹理
+    "pieces": [
+      { "src": "img/hole-cut.png", "x": 1.3, "y": -0.05, "z": -0.45,
+        "w": 2.65, "wash": 0.78, "hole": 1, "shadow": 0.13, "drift": 0.008 },
+      { "src": "img/lid-cut.png", "x": 1.22, "y": 0.56, "z": 0.42,
+        "w": 1.0, "enter": "drop", "at": "井盖", "fall": "掉进",
+        "alphaCut": 0.9, "spin": -14, "marks": [
+          { "w": 1.5, "h": 0.03, "rot": 44, "at": "对角" }
+        ] }
+    ],
+    "tapes": [ { "x": 0.16, "y": 1.24, "z": -0.435, "w": 0.56, "h": 0.18, "rot": 34 } ]
+  }
+}
+```
+
+**坐标是世界观单位，不是 0-1 比例。** 16:9 画幅约 **7.2 × 4.05**，`x/y` 是纸片
+**中心**，`w` 是宽度。直接抄 `cutouts` 的 0-1 坐标，纸片会全缩在画面正中一小团——
+`preflight.py` 会在 `w < 1` 或坐标明显越界时提醒。高度由图片比例推出来，不用写。
+
+| 字段 | 含义 |
+|---|---|
+| `camera` | `push_in`（默认）/ `pull_out` / `pan` / `static`。2D 的 `tilt`/`parallax`/`whip` 不支持，会回落 `push_in` |
+| `punch` | 开场镜头往前一顿的幅度（世界单位），默认 0 |
+| `backdrop` | 背景纸暗度，1 = 原色；想压暗给 0.9-0.96 |
+| `foreground` | 底部撕纸带（近景遮挡），默认关 |
+| `motes` | 空气尘埃，默认开 |
+| `sway` | 手持微漂移强度，默认 1；点题段给 0 |
+| `mapSrc` | 底纸上的旧地图纹理（相对 `public/`） |
+
+纸片字段：`src` / `x` / `y` / `w` 必填，其余可选。
+
+| 字段 | 含义 |
+|---|---|
+| `z` | 深度，**0 是纸面，负值向后**。小于 -2.9 会被背景纸完全挡住 |
+| `rot` | 静态倾角（度） |
+| `drift` | 常驻微漂移幅度（世界单位），默认 0.018 |
+| `shadow` | 程序投影强度（世界单位），默认 0 |
+| `wash` / `gray` / `hole` | 纸浆覆盖 / 去色 / 洞感，各 0-1 |
+| `alphaCut` | alpha 裁切阈值，默认 0.35；素材自带烘焙投影时抬到 0.9 |
+| `blend` | `normal` / `multiply`；素材带白底时用 multiply |
+| `enter` | `drop` / `rise` / `pop`，省略 = 拍开头就在 |
+| `at` | 念到这个词才入场（写旁白里的原词） |
+| `spin` / `spinAt` / `spinDur` | 整拍累计转角；给了 `spinAt` 就等念到那个词再转 |
+| `fall` / `fallDistance` | 念到这个词开始坠出画；默认坠 1.35 |
+| `marks` | 画在这张纸上的红笔（纸片局部坐标），跟着纸片一起漂移与旋转 |
+
+`marks` 每项：`w` 必填，`x/y/z` 默认 0 / 0 / 0.03，`h` 默认 0.03、`rot` 默认 0、
+`color` 默认正红；`at` 是"念到这个词开始从左端画出来"，`drawDur` 默认 10 帧，
+不给 `at` 就常驻。
+
+**和 2D 层的关系**：`stage3d` 只替换 `PaperStage` 与 `cutouts`。`kind` 组件、字幕、
+`annotations`、`impact`/`flash`/`sweep`、转场都照常压在 3D 画面上。同一拍写了
+`cutouts` / `pieceBase`+`pieces` / `image` / `layers` 不会报错，但**都不会渲染**。
+`quote` 拍是深色纸台，3D 目前只有浅色底，别混用。
+
+依赖：`three`、`@react-three/fiber`（^9）、`@remotion/three`（版本必须和
+`remotion` 一致）。模板 `package.json` 已经带上；**老项目要自己补**
+`npm install three @react-three/fiber @remotion/three@4.0.535`，否则 `preflight`
+直接报错。
+
+四条实现上的硬坑：
+
+1. **shader 的 uniform 不能原地改 `uniforms.x.value`。** 逐帧视频渲染是多实例
+   并行截图，原地改的值会冻结在第一帧；每帧新建 uniforms 对象
+   （`{ ...base, uProgress: { value } }`）才会更新。
+2. **动画只读 `useCurrentFrame()`**，不要用 `useFrame` 的 delta 或 `performance.now()`
+   ——同一帧在不同 worker 上会长得不一样。
+3. **纸片边缘一圈灰影**：素材把烘焙投影做进了 alpha，普通混合会把它画成实体。
+   抬 `alphaCut`（0.9）把灰影裁掉，阴影交给 `shadow` 程序投影。
+4. **词锚点和 2D 是同一套规则**（`resolveWordTimings`）。旁白会按 boundary 把
+   "井盖"切成"井"+"盖"，直接 `includes("井盖")` 永远不命中，会退回拍开头——
+   纸片就变成"一开场就掉下来"。
+
+**什么时候值得上 3D**：需要真前后遮挡（东西掉进洞里、纸片从别的纸背后转出来、
+镜头穿过一层纸）。纯粹"想让画面更高级"不值得——3D 渲染不慢，但慢镜头下画面
+反而更"静"，PPT 感要靠在拍内安排词级动作和切镜，不在 Z 轴。
 
 ## 碎片拼贴层（`Pieces.tsx`）
 

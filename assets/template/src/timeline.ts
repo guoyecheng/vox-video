@@ -50,6 +50,103 @@ export type CameraMove =
   | "whip"       // 快速甩镜（慎用，会切边缘）
   | "static";    // 不动（点题段用）
 
+/* ---------------- 3D 纸艺舞台（可选） ---------------- */
+
+/** 3D 舞台只支持这四种运镜；其余 CameraMove 会回落到 push_in */
+export type Stage3DCamera = "push_in" | "pull_out" | "pan" | "static";
+
+export type Stage3DMarkSpec = {
+  /** 纸片局部坐标，默认 0 / 0 */
+  x?: number;
+  y?: number;
+  z?: number;
+  w: number;
+  h?: number;
+  rot?: number;
+  color?: string;
+  /** 念到这个词开始从左端画出来；省略 = 常驻 */
+  at?: string;
+  drawDur?: number;
+};
+
+/**
+ * 一张 3D 纸片。动画锚在旁白的词上——写词，不写帧。
+ * 锚点命中词首后提前 2 帧起手。
+ */
+export type Stage3DPieceSpec = {
+  /** 透明抠图（相对 public/） */
+  src: string;
+  /** 世界坐标中心；16:9 画幅约 7.2 × 4.05 */
+  x: number;
+  y: number;
+  /** 世界单位宽度；高度按图片比例推出来 */
+  w: number;
+  z?: number;
+  rot?: number;
+  /** 程序投影强度（世界单位），默认 0 */
+  shadow?: number;
+  /** 常驻微漂移幅度（世界单位），默认 0.018 */
+  drift?: number;
+  /** 纸浆覆盖强度：把照片色调拉回纸艺色系 */
+  wash?: number;
+  /** 去色强度：让金属/照片变成"印在纸上的灰阶图" */
+  gray?: number;
+  /** 洞感 0-1：按纹理亮度把中间压成墨色，白边不动 */
+  hole?: number;
+  /**
+   * alpha 裁切阈值，默认 0.35。素材把烘焙投影做进 alpha 时，普通混合会把
+   * 那圈灰影画成实体；抬到 0.9 只留实体，投影交给程序阴影。
+   */
+  alphaCut?: number;
+  /** 素材带白底 + 烘焙投影时用 multiply，白底乘回背景纸 */
+  blend?: "normal" | "multiply";
+  enter?: "drop" | "rise" | "pop";
+  /** 念到这个词才入场；省略 = 拍开头 */
+  at?: string;
+  /** 整拍内累计旋转角度；配 spinAt 就是等词再转 */
+  spin?: number;
+  spinAt?: string;
+  spinDur?: number;
+  /** 念到这个词开始坠出画（方盖掉进洞里） */
+  fall?: string;
+  /** 下坠世界单位，默认 1.35 */
+  fallDistance?: number;
+  /** 画在这张纸上的笔迹，跟着纸片一起漂移和旋转 */
+  marks?: Stage3DMarkSpec[];
+};
+
+export type Stage3DTapeSpec = {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+  h: number;
+  rot: number;
+};
+
+/**
+ * 一拍的 3D 纸艺舞台。启用后这一拍不再渲染 2D `PaperStage` 和 `cutouts`，
+ * 但 `kind` 组件、批注、字幕、特效层照常压在 3D 画面上。
+ */
+export type Stage3DSpec = {
+  /** 省略时跟随 visual.camera */
+  camera?: Stage3DCamera;
+  /** 开场镜头顿挫（世界单位） */
+  punch?: number;
+  /** 背景纸暗度，1 = 原色 */
+  backdrop?: number;
+  /** 底部撕纸带（前景遮挡），默认关 */
+  foreground?: boolean;
+  /** 空气尘埃，默认开 */
+  motes?: boolean;
+  /** 手持微漂移强度，默认 1；点题段可以给 0 */
+  sway?: number;
+  /** 可选地图纹理（相对 public/），铺在底纸上做旧 */
+  mapSrc?: string;
+  pieces: Stage3DPieceSpec[];
+  tapes?: Stage3DTapeSpec[];
+};
+
 /** 程序化特效（叠在最上层） */
 export type VfxKind = "none" | "confetti" | "starburst";
 
@@ -353,6 +450,8 @@ export type VisualSpec = {
   /** 红笔批注层。见 NoteSpec；画在内容之上、字幕之下。
    *  字段名避开 `notes`——callout 拍的 notes 是图上的圈注，语义不同。 */
   annotations?: NoteSpec[];
+  /** 3D 纸艺舞台（可选）。给了它这一拍就用真 Z 轴，忽略 2D cutouts。 */
+  stage3d?: Stage3DSpec;
 };
 
 export type SideSpec = {
