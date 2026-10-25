@@ -32,7 +32,7 @@ description: 用 Remotion + Edge TTS 把中文旁白稿做成 VOX 风格的解�
 | 闸门 | 停在哪 | 用户要确认什么 |
 |---|---|---|
 | **A 稿子** | `script.json` 写完、事实核完，**跑 TTS 之前** | 选题角度、beat 切分、旁白措辞、每个数字和出处 |
-| **B 画面** | `timeline.json` 生成后，**整片渲染之前** | 抽帧画面、字幕、转场、节奏 |
+| **B 画面** | `timeline.json` 生成后，**整片渲染之前** | 关键帧 PNG 联络表（用户亲眼看图）、字幕、转场、节奏 |
 
 ### 闸门 A：先给分镜和事实，再配音
 
@@ -49,31 +49,32 @@ description: 用 Remotion + Edge TTS 把中文旁白稿做成 VOX 风格的解�
 **为什么必须停：** TTS 一跑完，旁白就固化成音频了。改一句话要重跑整条时间轴，
 所有依赖词级时间戳的动画都会跟着变。稿子阶段改一个字是几秒钟的事。
 
-### 闸门 B：先看静帧，再渲染整片
+### 闸门 B：先看关键帧图片，再渲染整片
 
-`timeline.json` 出来后，**按 beat 抽一帧**，逐张看过再决定。用脚本抽，别手数帧号：
+`timeline.json` 出来后，**先抽关键帧、把图片直接发给用户，拿到明确同意后才渲染**。
+顺序不能反：渲完整片再补看，等于把几十分钟机器时间押在没看过的画面上。
 
 ```bash
-python "<skill>/scripts/stills.py" --project "<项目>" --sheet
+python "<skill>/scripts/stills.py" --project "<项目>" --sheet --tail
 ```
 
-它按 `beat.from + 30`（默认）给每拍抽一张，存到 `out/stills/seq/`，再拼一张
-HTML 联络表（`out/stills/sheet.html`，浏览器直接开，每格下面标着拍号/帧号/类型）。
-想看每拍出场那一刻加 `--tail`；只想看某几拍用 `--beat tumu,gate`；
-先看计划不渲染用 `--list`。
+它按 `beat.from + 30`（默认）给每拍抽一张，`--tail` 再加每拍出场前 8 帧；
+静帧存在 `out/stills/seq/`，联络表出两份：`sheet.png`（**直接贴进对话给用户看**）
+和 `sheet.html`（能放大、每格标着拍号/帧号/类型）。
+只想看某几拍用 `--beat tumu,gate`，先看计划不渲染用 `--list`。
 
-逐张看过再决定：
+关键帧至少覆盖这些位置：
 
-- 有没有文字溢出、重叠、被裁
-- 字幕是否压住主体
-- 转场是否落在正确的接缝上
-- 数字、单位、标签有没有错
-- 配图是否切题、风格是否一致、**画面里有没有冒出文字或错字**
+- 每拍中段：主体、字幕、纸片字是否就位
+- 每拍出场前 8 帧（`--tail`）：转场接缝有没有露底、元素会不会突然跳走
+- 强调词纸片：贴的位置对不对、版式和颜色有没有撞（同拍两张别长得一样）
+- `quote` / `compare` / `stat`：数字、单位、出处、左右栏有没有错
 
-把这几张静帧（或联络表的路径）给用户看，等确认后再跑整片渲染。
+**把 `sheet.png` 发给用户**（不是只报路径，也不是只说"我看过了"），逐条说清这次改了什么。
+用户明确点头后，才进 `## 渲染`。
 
-整片渲染是几分钟到几十分钟的机器时间，抽一帧是几秒钟。
-**先抽帧再渲染，永远比渲完发现错字再重来快。**
+> **未拿到确认前，不执行 `npx remotion render`。** 这是硬规则，不是建议。
+> 整片渲染是几分钟到几十分钟的机器时间，抽帧是几秒钟——先抽帧永远更省。
 
 注意三个自检脚本的时机：`check_rhythm.py` 和 `preflight.py` 只读脚本和源码，
 **在闸门 B 之前跑**；`verify_sync.py` 要读成片音轨，**只能在渲染之后跑**，
@@ -668,7 +669,8 @@ python "<skill>/scripts/check_motion.py" --project "<项目>" --baseline out/old
 > `verify_sync.py` 和 `check_motion.py` 需要成片，所以在**用户同意渲染之后**跑；
 > `check_rhythm.py` 只读脚本，配音前就能跑。
 
-> **停在这里，不要往下跑。** 按[闸门 B](#闸门-b先看静帧再渲染整片)按 beat 抽帧，把静帧给用户看过、拿到明确同意，才进渲染。
+> **停在这里，不要往下跑。** 按[闸门 B](#闸门-b先看关键帧图片再渲染整片)抽关键帧，
+> 把 `out/stills/sheet.png` 直接发给用户、拿到明确同意，才进渲染。
 
 ## 配乐
 
@@ -692,6 +694,9 @@ python "<skill>/scripts/check_motion.py" --project "<项目>" --baseline out/old
 > 音量拿不准就 `gain 0.2 / duck 0.6` 起步；`preflight.py` 会在 `gain > 0.45` 或 `duck < 0.4` 时提醒。
 
 ## 渲染
+
+> **闸门 B 已经通过才往下走。** 关键帧 `sheet.png` 已发给用户并拿到明确同意；
+> 没确认就先回闸门 B 抽帧，不要拿整片渲染当预览。
 
 ```bash
 cd "<项目>"
@@ -759,7 +764,7 @@ python "<skill>/scripts/sync_template.py" --project "<项目>" --pull --force  #
 |---|---|---|
 | `scripts/preflight.py` | 配音**之前** | 查 script.json 的错：id 重复、kind 拼错、图不存在、层少 `y`、枚举值写错、字体缺失 |
 | `scripts/vox_tts.py` | 闸门 A 之后 | 合成配音 + 生成 `src/timeline.json`（帧数由音频实测推导） |
-| `scripts/stills.py` | 闸门 B（渲染之前） | 按 beat 抽静帧 + HTML 联络表，`out/stills/sheet.html` |
+| `scripts/stills.py` | 闸门 B（渲染之前） | 按 beat 抽关键帧 + 联络表；`sheet.png` 直接发用户，`sheet.html` 可放大看标签 |
 | `scripts/check_rhythm.py` | 闸门 B 之前 | 查节奏单调、字号太小、类 CSS 动画 |
 | `scripts/check_motion.py` | 渲染之后 | 逐拍均差、九宫格、静止占比；`--baseline` 跟旧版逐拍对比 |
 | `scripts/verify_sync.py` | 渲染之后 | 音画同步（包络互相关），区分系统偏移和抖动 |
@@ -774,8 +779,8 @@ python "<skill>/scripts/sync_template.py" --project "<项目>" --pull --force  #
 ```bash
 python scripts/preflight.py --project .          # 1 体检
 npm run tts                                       # 2 配音 + 时间轴
-python scripts/stills.py --project . --sheet      # 3 抽帧（闸门 B，给用户看）
-npm run render                                    # 4 整片
+python scripts/stills.py --project . --sheet --tail   # 3 抽关键帧（闸门 B，发图等确认）
+npm run render                                    # 4 整片（确认之后）
 python scripts/check_motion.py --project . --baseline out/old.mp4   # 5 体检
 python scripts/verify_sync.py --project .        # 6 同步校验
 ```

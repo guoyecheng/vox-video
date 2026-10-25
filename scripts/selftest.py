@@ -530,6 +530,22 @@ def test_paper_tiles_wired() -> str:
     return "纯切分 + 每拍限量 + 六种版式"
 
 
+def test_render_gate_requires_still_approval() -> str:
+    """闸门 B：先出关键帧联络表并拿到用户确认，渲染排在确认之后。"""
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    assert "未拿到确认前，不执行 `npx remotion render`" in skill, \
+        "SKILL.md 没写渲染前的硬停"
+    assert "sheet.png" in skill and "不是只报路径" in skill, \
+        "闸门 B 要把关键帧图片发给用户，不能只报路径"
+    assert skill.index("### 闸门 B") < skill.index("## 渲染"), \
+        "闸门 B 必须写在渲染之前"
+
+    stills = (ROOT / "scripts" / "stills.py").read_text(encoding="utf-8")
+    assert "sheet_png_pillow" in stills, \
+        "没有完整 ffmpeg 时要用 Pillow 拼 PNG 联络表，否则用户看不到图"
+    return "关键帧确认后才渲染"
+
+
 def test_word_helpers_are_pure_module() -> str:
     """对齐逻辑必须住在无 React 依赖的 words.ts 里，否则 node 套件测不到。"""
     words = (TEMPLATE / "src" / "words.ts").read_text(encoding="utf-8")
@@ -667,6 +683,7 @@ TESTS = [
     test_word_alignment_suite,
     test_word_helpers_are_pure_module,
     test_paper_tiles_wired,
+    test_render_gate_requires_still_approval,
     test_tail_never_shows_bare_stage,
     test_cutout_keying_keeps_enclosed_colors,
     test_cutouts_wired_and_validated,

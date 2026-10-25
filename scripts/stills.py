@@ -11,7 +11,7 @@
 这个脚本把两样都算好：
 
     python stills.py --project "<项目>"                 # 每拍抽一张，放 out/stills/
-    python stills.py --project "<项目>" --sheet         # 再拼一张联络表
+    python stills.py --project "<项目>" --sheet         # 再拼联络表（sheet.png / sheet.html）
     python stills.py --project "<项目>" --beat tumu,gate
     python stills.py --project "<项目>" --offset 45      # 抽帧位置往后挪
 
@@ -109,24 +109,68 @@ def full_ffmpeg(project: Path) -> str | None:
 
 
 def sheet_png(project: Path, jobs: list[dict], outdir: Path, scale: int, cols: int) -> bool:
-    """系统有完整 ffmpeg 时拼一张 PNG 联络表。"""
-    ffmpeg = full_ffmpeg(project)
-    if not ffmpeg:
-        return False
+    """拼一张 PNG 联络表：优先用带 tile 的完整 ffmpeg，没有则用 Pillow 兜底。
+
+    PNG 是给用户在对话里直接看的——HTML 联络表能放大、有标签，但用户得自己开浏览器。
+    """
     ok_jobs = [j for j in jobs if j["ok"]]
     if not ok_jobs:
         return False
     rows = (len(ok_jobs) + cols - 1) // cols
     target = outdir / "sheet.png"
-    vf = f"scale={scale}:-1,tile={cols}x{rows}:padding=6:margin=6:color=white"
-    cmd = [ffmpeg, "-y", "-v", "error", "-framerate", "1",
-           "-i", str(outdir / "seq" / "%03d.png"),
-           "-vf", vf, "-frames:v", "1", str(target)]
-    r = subprocess.run(cmd, cwd=str(project), capture_output=True, text=True)
-    if r.returncode == 0 and target.exists():
-        print(f"  → PNG 联络表 {target}（{len(ok_jobs)} 拍，{cols}x{rows}）")
-        return True
-    return False
+    ffmpeg = full_ffmpeg(project)
+    if ffmpeg:
+        vf = f"scale={scale}:-1,tile={cols}x{rows}:padding=6:margin=6:color=white"
+        cmd = [ffmpeg, "-y", "-v", "error", "-framerate", "1",
+               "-i", str(outdir / "seq" / "%03d.png"),
+               "-vf", vf, "-frames:v", "1", str(target)]
+        r = subprocess.run(cmd, cwd=str(project), capture_output=True, text=True)
+        if r.returncode == 0 and target.exists():
+            print(f"  → PNG 联络表 {target}（{len(ok_jobs)} 张，{cols}x{rows}）")
+            return True
+    return sheet_png_pillow(ok_jobs, target, scale, cols)
+
+
+def sheet_png_pillow(jobs: list[dict], target: Path, scale: int, cols: int) -> bool:
+    """没有完整 ffmpeg 时用 Pillow 拼；没装 Pillow 就返回 False（改出 HTML）。
+
+    每格底下留一条标签：拍号 / mid|tail / 帧号。只报路径不给标签，用户分不清
+    哪格是入场、哪格是转场接缝。
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return False
+    ims = []
+    for j in jobs:
+        p = Path(j["file"])
+        if not p.exists():
+            continue
+        im = Image.open(p).convert("RGB")
+        w, h = im.size
+        ims.append((j, im.resize((scale, max(1, round(h * scale / w))))))
+    if not ims:
+        return False
+    try:
+        font = ImageFont.load_default(size=16)
+    except TypeError:  # Pillow < 10.1
+        font = ImageFont.load_default()
+    rows = (len(ims) + cols - 1) // cols
+    cell_h = max(im.height for _, im in ims)
+    cap = 22
+    pad = 6
+    sheet = Image.new("RGB", (cols * scale + (cols + 1) * pad,
+                              rows * (cell_h + cap) + (rows + 1) * pad), (248, 246, 240))
+    draw = ImageDraw.Draw(sheet)
+    for k, (job, im) in enumerate(ims):
+        x = pad + (k % cols) * (scale + pad)
+        y = pad + (k // cols) * (cell_h + cap + pad)
+        sheet.paste(im, (x, y))
+        label = f"{job['id']}  {job.get('label', '')}  f{job['frame']}"
+        draw.text((x + 4, y + cell_h + 3), label, fill=(96, 90, 78), font=font)
+    sheet.save(target)
+    print(f"  → PNG 联络表 {target}（{len(ims)} 张，{cols}x{rows}，Pillow）")
+    return True
 
 
 def sheet_html(jobs: list[dict], outdir: Path, cols: int) -> None:
@@ -153,7 +197,7 @@ def sheet_html(jobs: list[dict], outdir: Path, cols: int) -> None:
   img {{ width: 100%; display: block; border-radius: 3px; }}
   figcaption {{ padding-top: 6px; font-size: 12px; color: #6b675c; }}
 </style>
-<h1>静帧联络表 · {len(cells)} 拍</h1>
+<h1>静帧联络表 · {len(cells)} 张</h1>
 <p>闸门 B 用：逐张看过再决定要不要渲整片。</p>
 <div class="grid">
 {chr(10).join(cells)}
@@ -161,7 +205,7 @@ def sheet_html(jobs: list[dict], outdir: Path, cols: int) -> None:
 """
     target = outdir / "sheet.html"
     target.write_text(html, encoding="utf-8")
-    print(f"  → HTML 联络表 {target}（{len(cells)} 拍，{cols} 列）")
+    print(f"  → HTML 联络表 {target}（{len(cells)} 张，{cols} 列）")
 
 
 def main() -> int:
