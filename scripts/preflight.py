@@ -24,8 +24,10 @@ Remotion 渲染很慢（一条 60 秒的片子 3-8 分钟），而 `script.json`
 3. 旁白：非空；kinetic 的 words 必须按顺序出现在旁白里
 4. 素材：image / src / layers[].src 引用的文件在 public/ 下真的存在
 5. 图层：band / y / depth 的取值范围；给了 band 不给 y 会让层堆在底部
-6. 取值域：imageLayout / impact / ambient / transition 这些枚举别写错
-7. 环境：字体文件在不在（缺了中文会静默回落雅黑）
+6. 取值域：imageLayout / motion / layout / tile / impact / ambient / transition 这些枚举别写错
+7. 批注：annotations 的 kind / 百分比坐标 / 字数 / 是否落进字幕带
+8. 纸片：tile 只对 kinetic / quote 生效；红纸整片最多一次
+9. 环境：字体文件在不在（缺了中文会静默回落雅黑）
 
 用法
 ----
@@ -67,6 +69,7 @@ TRANSITIONS = {
     "default", "push", "cut", "hard", "book", "burn",
 }
 IMAGE_LAYOUTS = {"full", "inset"}
+SHOT_TRANSITIONS = {"cut", "crossfade"}
 CAMERA_MOVES = {"push_in", "pull_out", "pan", "tilt", "parallax", "whip", "static"}
 VFX = {"none", "confetti", "starburst"}
 # references/arcs.md 里的叙事弧
@@ -78,11 +81,26 @@ ARCS = {
 IMPACTS = {"soft", "medium", "heavy"}
 AMBIENTS = {"off", "soft", "normal", "strong"}
 
+# motion / layout 的兜底名单，优先从 src/timeline.ts 读（见 _enum_from_code）
+MOTION_RECIPES = {"stamp", "wipe", "rise", "flip", "build", "drift"}
+LAYOUT_MODES = {"center", "left-edge", "full-bleed", "split", "bottom-third"}
+# 强调词的纸片版式（src/components/PaperTile.tsx 的 TileVariant）
+TILE_VARIANTS = {"auto", "cut", "note", "clip", "label", "banner", "red"}
+
+# 各 kind 已实现哪些 layout 变体（src/components/ 里的实现）。没列出的 kind
+# 只有默认居中；写了没实现的变体会被静默忽略，所以提醒而不是报错。
+LAYOUT_SUPPORT = {
+    "kinetic": {"left-edge", "bottom-third", "full-bleed"},
+    "stat": {"left-edge", "bottom-third", "split", "full-bleed"},
+    "quote": {"left-edge", "bottom-third", "full-bleed"},
+    "cards": {"left-edge", "bottom-third"},
+}
+
 FONTS = ["public/fonts/NotoSansSC-VF.ttf", "public/fonts/ArchivoBlack-Regular.ttf"]
 
 
-def kinds_from_code(project: Path) -> set[str] | None:
-    """从项目源码里读 VisualKind，免得脚本和代码两套名单。
+def _enum_from_code(project: Path, name: str) -> set[str] | None:
+    """从项目源码里读一个字符串联合类型（VisualKind / MotionRecipe / LayoutMode）。
 
     必须截到声明自己的那个分号：VisualKind 后面紧跟着 CameraMove / VfxKind / PieceIn，
     按固定长度截取会把 "pan"、"none" 这类枚举值当成合法 kind 放过。
@@ -91,15 +109,27 @@ def kinds_from_code(project: Path) -> set[str] | None:
     if not p.exists():
         return None
     txt = p.read_text("utf-8")
-    i = txt.find("export type VisualKind")
+    i = txt.find(f"export type {name}")
     if i < 0:
         return None
     block = txt[i:]
     end = block.find(";")
     if end < 0:
         return None
-    names = set(re.findall(r'"(\w+)"', block[:end]))
+    names = set(re.findall(r'"([\w-]+)"', block[:end]))
     return names or None
+
+
+def kinds_from_code(project: Path) -> set[str] | None:
+    return _enum_from_code(project, "VisualKind")
+
+
+def motions_from_code(project: Path) -> set[str] | None:
+    return _enum_from_code(project, "MotionRecipe")
+
+
+def layouts_from_code(project: Path) -> set[str] | None:
+    return _enum_from_code(project, "LayoutMode")
 
 
 def transitions_from_code(project: Path) -> set[str] | None:
@@ -257,9 +287,264 @@ def check_pieces(project: Path, rep: Report, where: str, visual: dict) -> None:
                         f"挖空的纸底（除非你就是想留个缺口）")
 
 
+CUTOUT_ENTERS = {"pop", "drop", "rise", "fly_left", "fly_right", "stamp"}
+
+
+def check_cutouts(project: Path, rep: Report, where: str, visual: dict, narration: str) -> None:
+    """抠图元素（visual.cutouts）的校验。
+
+    和 pieces 一样，坐标是画幅比例、不是像素；区别是 x/y 是**中心点**，
+    所以越界判断是 x±w/2，而不是 x+w。
+    """
+    cutouts = visual.get("cutouts")
+    if not cutouts:
+        return
+    if not isinstance(cutouts, list):
+        rep.err(f"{where}.cutouts", "不是数组")
+        return
+    if visual.get("pieces"):
+        rep.warn(where, "cutouts 和 pieces 同时给了——两种元素层会叠在一起，确认不是想二选一")
+
+    plain = narration.replace(" ", "").replace("\u3000", "")
+    for i, c in enumerate(cutouts):
+        w = f"{where}.cutouts[{i}]"
+        if not isinstance(c, dict):
+            rep.err(w, "不是一个对象")
+            continue
+        src = c.get("src")
+        if not src:
+            rep.err(w, "少了 src")
+        else:
+            check_asset(project, rep, w, src)
+            rel = str(src).lstrip("/")
+            if not is_remote(rel) and not (project / "public" / rel).exists():
+                rep.warn(w, "抠图缺失时先跑 scripts/cutout.py（images.json 里要标 cutout: true）")
+            elif not rel.endswith("-cut.png"):
+                rep.warn(w, "看起来不是 cutout.py 的产物（习惯上以 -cut.png 结尾）")
+
+        for k in ("x", "y"):
+            v = c.get(k)
+            if not isinstance(v, (int, float)) or not (0 <= v <= 1):
+                rep.err(w, f"{k} 是中心点（画幅比例 0-1），现在是 {v!r}")
+        width = c.get("w")
+        if not isinstance(width, (int, float)) or not (0 < width <= 1):
+            rep.err(w, f"w 应该是 (0, 1] 的宽度比例，现在是 {width!r}")
+        else:
+            if width < 0.06:
+                rep.warn(w, f"w={width} 太小，元素会缩成一个小贴纸")
+            x, y = c.get("x"), c.get("y")
+            if isinstance(x, (int, float)) and (x - width / 2 < -0.05 or x + width / 2 > 1.05):
+                rep.warn(w, "元素横向超出画幅——这是有意的出画/入画就没问题")
+            if isinstance(y, (int, float)) and (y < 0.05 or y > 0.95):
+                rep.warn(w, "元素中心贴近画幅边缘，坠落/入场后可能大半在画外")
+
+        enter = c.get("enter")
+        if enter is not None and enter not in CUTOUT_ENTERS:
+            rep.err(w, f"enter 只能是 {', '.join(sorted(CUTOUT_ENTERS))}，现在 {enter}")
+
+        for key in ("at", "fall"):
+            word = c.get(key)
+            if word is None:
+                continue
+            if not isinstance(word, str) or not word.strip():
+                rep.err(w, f"{key} 应该是旁白里的词，现在是 {word!r}")
+            elif word.replace(" ", "") not in plain:
+                rep.warn(w, f"{key}=\"{word}\" 在旁白里找不到——会退回拍开头，动效会脱拍")
+
+        depth = c.get("depth")
+        if depth is not None and (not isinstance(depth, (int, float)) or not (0 <= depth <= 1)):
+            rep.err(w, f"depth 应该在 [0, 1]，现在是 {depth}")
+        rotate = c.get("rotate")
+        if rotate is not None and (not isinstance(rotate, (int, float)) or abs(rotate) > 180):
+            rep.err(w, f"rotate 应该在 [-180, 180] 度，现在是 {rotate}")
+        shadow = c.get("shadow")
+        if shadow is not None and (not isinstance(shadow, (int, float)) or shadow < 0):
+            rep.err(w, f"shadow 是不小于 0 的像素值，现在是 {shadow}")
+        blend = c.get("blend")
+        if blend is not None and blend not in ("normal", "multiply"):
+            rep.err(w, f"blend 只能是 normal / multiply，现在 {blend}")
+        if "front" in c and not isinstance(c["front"], bool):
+            rep.err(w, "front 应该是布尔值")
+            continue
+
+        at, fall = c.get("at"), c.get("fall")
+        if at and fall and at == fall:
+            rep.warn(w, "at 和 fall 是同一个词：元素会在入场的同一帧开始坠落")
+
+
+NOTE_KINDS = {"arrow", "circle", "measure", "tag", "stamp", "shape"}
+NOTE_SHAPES = {"square", "circle", "triangle", "reuleaux", "hex"}
+
+
+def check_notes(rep: Report, where: str, visual: dict) -> None:
+    """红笔批注（visual.annotations）。
+
+    字段名是 annotations，不是 notes：`callout` 拍的 notes 是图片上的
+    圈注列表（坐标 0-1），和这个横跨全画的批注层是两回事。
+    """
+    notes = visual.get("annotations")
+    if not notes:
+        return
+    if not isinstance(notes, list):
+        rep.err(f"{where}.annotations", "不是数组")
+        return
+    for i, n in enumerate(notes):
+        w = f"{where}.annotations[{i}]"
+        if not isinstance(n, dict):
+            rep.err(w, "不是一个对象")
+            continue
+        kind = n.get("kind")
+        if kind not in NOTE_KINDS:
+            rep.err(w, f"kind 只能是 {', '.join(sorted(NOTE_KINDS))}，现在 {kind!r}")
+            continue
+        for k in ("x", "y"):
+            v = n.get(k)
+            if not isinstance(v, (int, float)) or not (0 <= v <= 100):
+                rep.err(w, f"{k} 是画幅百分比（0-100），现在是 {v!r}")
+        for k in ("w", "h"):
+            v = n.get(k)
+            if v is not None and (not isinstance(v, (int, float)) or v == 0):
+                rep.err(w, f"{k} 是不为 0 的像素值，现在是 {v!r}")
+        at = n.get("at")
+        if at is not None and (not isinstance(at, (int, float)) or at < 0):
+            rep.err(w, f"at 是拍内秒数，现在是 {at!r}")
+        rot = n.get("rot")
+        if rot is not None and (not isinstance(rot, (int, float)) or abs(rot) > 60):
+            rep.err(w, f"rot 建议在 ±60 度内，现在是 {rot}")
+        if kind == "shape":
+            shp = n.get("shape")
+            if shp is not None and shp not in NOTE_SHAPES:
+                rep.err(w, f"shape 只能是 {', '.join(sorted(NOTE_SHAPES))}，现在 {shp!r}")
+        if kind in ("tag", "stamp"):
+            text = n.get("text")
+            if not isinstance(text, str) or not text.strip():
+                rep.err(w, f"{kind} 必须有 text")
+            else:
+                limit = 6 if kind == "tag" else 4
+                if len(text) > limit:
+                    rep.warn(w, f"{kind} 建议 ≤{limit} 字，现在 {len(text)}——纸片会被撑得很宽")
+        if kind in ("arrow", "measure") and n.get("w") is None:
+            rep.warn(w, f"{kind} 没写 w：默认长度 170px，多数位置会太短")
+        y = n.get("y")
+        if isinstance(y, (int, float)) and y > 78 and kind in ("tag", "stamp", "shape"):
+            rep.warn(w, "批注落在字幕带（y>78%）里，会被字幕盖住")
+
+
+def check_shots(where: str, visual: dict, motions: set[str], layouts: set[str],
+                rep: Report) -> None:
+    """beat 内镜头拆分（visual.shots）的结构校验。
+
+    v1 只对 kinetic 生效——items 类组件的词级时间戳不在词流里，按项锚点是
+    另一套机制。from/to 的单位是**秒**（相对拍开头），写帧是最常见的错。
+    """
+    shots = visual.get("shots")
+    if shots is None:
+        return
+    if not isinstance(shots, list) or not shots:
+        rep.err(f"{where}.shots", "是空数组或不是数组——不拆分就删掉这个字段")
+        return
+    kind = visual.get("kind")
+    if kind != "kinetic":
+        rep.err(where, f"shots 目前只对 kinetic 生效（现在 kind='{kind}'）——"
+                       "非 kinetic 的镜头拆分 v1 不做")
+        return
+    if len(shots) == 1:
+        rep.warn(f"{where}.shots", "只有 1 条 shots，拆了等于没拆")
+
+    prev_to: float | None = None
+    prev_from: float | None = None
+    for i, s in enumerate(shots):
+        w = f"{where}.shots[{i}]"
+        if not isinstance(s, dict):
+            rep.err(w, "不是一个对象")
+            continue
+        frm, to = s.get("from"), s.get("to")
+        for key, v in (("from", frm), ("to", to)):
+            if v is not None and (not isinstance(v, (int, float)) or isinstance(v, bool) or v < 0):
+                rep.err(f"{w}.{key}", f"应该是 ≥0 的秒数（相对拍开头），现在是 {v!r}")
+        if isinstance(frm, (int, float)) and isinstance(to, (int, float)) and to <= frm:
+            rep.err(w, f"to({to}) 必须大于 from({frm})——否则这一镜没有时长")
+        if i > 0 and frm is None:
+            rep.err(w, "第 2 镜起必须写 from（秒）——起点靠上一镜 to 推导，少一个字段就错位")
+        if isinstance(frm, (int, float)):
+            if prev_from is not None and frm < prev_from:
+                rep.err(w, f"from({frm}) 比上一镜 from({prev_from}) 还早——shots 要按时间顺序写")
+            prev_from = frm
+            if prev_to is not None and frm < prev_to:
+                rep.err(w, f"from({frm}) 落在上一镜结束({prev_to})之前——镜头不能重叠")
+        if isinstance(to, (int, float)):
+            prev_to = to
+        motion = s.get("motion")
+        if motion is not None and motion not in motions:
+            rep.err(f"{w}.motion", f"只能是 {', '.join(sorted(motions))}，现在 {motion}")
+        layout = s.get("layout")
+        if layout is not None and layout not in layouts:
+            rep.err(f"{w}.layout", f"只能是 {', '.join(sorted(layouts))}，现在 {layout}")
+        trans = s.get("transition")
+        if trans is not None and trans not in SHOT_TRANSITIONS:
+            rep.err(f"{w}.transition",
+                    f"只能是 {', '.join(sorted(SHOT_TRANSITIONS))}，现在 {trans}")
+        words = s.get("words")
+        if words is not None and (not isinstance(words, list)
+                                  or not all(isinstance(x, str) for x in words)):
+            rep.err(f"{w}.words", "必须是字符串数组")
+
+
+def check_shot_fit(project: Path, rep: Report, beats: list) -> None:
+    """有 timeline.json 时，核对显式镜的 from/to 没有越过这一拍的实测拍长。
+
+    from/to 是秒，拍长是 TTS 之后才量出来的帧数——只读脚本时无法判断，
+    所以没有 timeline.json 就跳过。越界的镜头运行时会被 clamp 成末尾一帧，
+    整镜内容静默消失，必须在体检阶段报出来。
+    """
+    tp = project / "src" / "timeline.json"
+    if not tp.exists():
+        return
+    try:
+        tl = json.loads(tp.read_text("utf-8"))
+    except Exception:  # noqa: BLE001
+        return
+    if not isinstance(tl, dict):
+        return
+    fps = tl.get("fps")
+    if not isinstance(fps, (int, float)) or isinstance(fps, bool) or fps <= 0:
+        fps = 30
+    durations = {}
+    for b in tl.get("beats") or []:
+        if isinstance(b, dict) and b.get("id") is not None:
+            d = b.get("durationInFrames")
+            if isinstance(d, (int, float)) and not isinstance(d, bool):
+                durations[str(b["id"])] = d
+
+    for i, b in enumerate(beats):
+        if not isinstance(b, dict):
+            continue
+        v = b.get("visual") or {}
+        shots = v.get("shots")
+        dur = durations.get(str(b.get("id")))
+        if not isinstance(shots, list) or not shots or dur is None:
+            continue
+        limit = dur / fps
+        for j, s in enumerate(shots):
+            if not isinstance(s, dict):
+                continue
+            where = f"beats[{i}].visual.shots[{j}]"
+            for key in ("from", "to"):
+                val = s.get(key)
+                if isinstance(val, (int, float)) and not isinstance(val, bool) \
+                        and val > limit + 1e-6:
+                    rep.err(f"{where}.{key}",
+                            f"{key}({val}s) 超出这一拍实测时长 {dur} 帧（{limit:.2f}s）——"
+                            "运行时会被 clamp，这一镜会被压没")
+
+
 def check_visual(project: Path, rep: Report, where: str, visual: dict, narration: str = "",
-                 kinds: set[str] | None = None) -> None:
+                 kinds: set[str] | None = None,
+                 motions: set[str] | None = None,
+                 layouts: set[str] | None = None) -> None:
     kinds = kinds or KINDS
+    motions = motions or MOTION_RECIPES
+    layouts = layouts or LAYOUT_MODES
     if not isinstance(visual, dict):
         rep.err(where, "visual 不是一个对象")
         return
@@ -278,9 +563,10 @@ def check_visual(project: Path, rep: Report, where: str, visual: dict, narration
 
     if kind == "kinetic":
         words = visual.get("words")
-        if not words:
+        # 写了 shots 之后上屏词由每个镜头的 words 接管，拍级 words 本来就不该有
+        if not words and not visual.get("shots"):
             rep.warn(where, "kinetic 没有 words，上屏的就是整句旁白（想要逐词跳动就得写 words）")
-        else:
+        elif words:
             # 组件对"上屏词不在旁白里"是容忍的（resolveWordTimings 有别名和顺序兜底），
             # 所以这是提醒不是错——但对不上会让词错位弹出来。
             pos = -1
@@ -314,17 +600,44 @@ def check_visual(project: Path, rep: Report, where: str, visual: dict, narration
         rep.err(f"{where}.vfx", f"只能是 {', '.join(sorted(VFX))}，现在 {vfx}")
     if vfx == "confetti" and kind == "stat":
         rep.warn(where, "大数字特写上撒纸屑会干扰读数")
-    if not visual.get("elementMotion"):
-        rep.warn(where, "没写 elementMotion（这一拍画面里什么在动）——"
-                        "两根轴少一根，这一拍容易看起来像 PPT")
+    # 入场配方不写会自动轮换（相邻拍保证不同），所以缺 motion 不算错；
+    # 写错了才是错。elementMotion 已是自由备注，不再参与检查。
+    motion = visual.get("motion")
+    if motion is not None and motion not in motions:
+        rep.err(f"{where}.motion", f"只能是 {', '.join(sorted(motions))}，现在 {motion}")
+    layout_mode = visual.get("layout")
+    if layout_mode is not None and layout_mode not in layouts:
+        rep.err(f"{where}.layout", f"只能是 {', '.join(sorted(layouts))}，现在 {layout_mode}")
+    if layout_mode == "full-bleed" and not (visual.get("image") or visual.get("layers")):
+        rep.warn(where, "layout 写了 full-bleed 但没有 image/layers——贴边排版底下没有图可贴")
+    if layout_mode and layout_mode != "center" and layout_mode not in LAYOUT_SUPPORT.get(kind, set()):
+        rep.warn(where, f"kind '{kind}' 还没实现 layout '{layout_mode}'，写了不会生效")
 
     if visual.get("impact") and visual["impact"] not in IMPACTS:
         rep.err(f"{where}.impact", f"只能是 {', '.join(sorted(IMPACTS))}")
     if visual.get("ambient") and visual["ambient"] not in AMBIENTS:
         rep.err(f"{where}.ambient", f"只能是 {', '.join(sorted(AMBIENTS))}")
 
+    tile = visual.get("tile")
+    if tile is not None and tile not in TILE_VARIANTS:
+        rep.err(f"{where}.tile", f"只能是 {', '.join(sorted(TILE_VARIANTS))}，现在 {tile!r}")
+    elif tile and not visual.get("emphasis"):
+        rep.warn(f"{where}.tile", "没有 emphasis——纸片只贴在强调词上，tile 不会生效")
+    elif tile and kind not in {"kinetic", "quote"}:
+        rep.warn(f"{where}.tile", f"kind '{kind}' 没有强调词纸片，tile 不会生效")
+
+    emphasis = visual.get("emphasis")
+    if isinstance(emphasis, list):
+        for w in emphasis:
+            if isinstance(w, str) and len(w.replace(" ", "")) > 10:
+                rep.warn(f"{where}.emphasis", f"「{w}」超过 10 字，纸片会折成两行、"
+                                              "可能压到字幕——拆成两个短强调更稳")
+
     check_layers(project, rep, where, visual)
     check_pieces(project, rep, where, visual)
+    check_cutouts(project, rep, where, visual, narration)
+    check_notes(rep, where, visual)
+    check_shots(where, visual, motions, layouts, rep)
 
     # 经验提醒：不是错，但会明显掉观感
     if kind == "stat" and (visual.get("image") or visual.get("layers")):
@@ -338,9 +651,13 @@ def check_visual(project: Path, rep: Report, where: str, visual: dict, narration
 
 
 def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
-                 transitions: set[str] | None = None) -> dict:
+                 transitions: set[str] | None = None,
+                 motions: set[str] | None = None,
+                 layouts: set[str] | None = None) -> dict:
     kinds = kinds or KINDS
     transitions = transitions or TRANSITIONS
+    motions = motions or MOTION_RECIPES
+    layouts = layouts or LAYOUT_MODES
     path = project / "script.json"
     if not path.exists():
         rep.err("script.json", "不存在")
@@ -357,6 +674,7 @@ def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
         return data
 
     seen: set[str] = set()
+    red_tiles: list[str] = []
     for i, b in enumerate(beats):
         where = f"beats[{i}]"
         if not isinstance(b, dict):
@@ -370,6 +688,9 @@ def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
             if bid in seen:
                 rep.err(where, "id 重复")
             seen.add(bid)
+            visual = b.get("visual")
+            if isinstance(visual, dict) and visual.get("tile") == "red":
+                red_tiles.append(where)
         narration = b.get("narration")
         if not isinstance(narration, str) or not narration.strip():
             if not b.get("hold"):
@@ -377,7 +698,14 @@ def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
         if b.get("transition") and b["transition"] not in transitions:
             rep.err(where, f"transition '{b['transition']}' 不认识"
                            f"（合法的：{', '.join(sorted(transitions))}）")
-        check_visual(project, rep, where, b.get("visual") or {}, narration or "", kinds)
+        check_visual(project, rep, where, b.get("visual") or {}, narration or "",
+                     kinds, motions, layouts)
+
+    check_shot_fit(project, rep, beats)
+
+    if len(red_tiles) > 1:
+        rep.warn("script.json", f"红纸用了 {len(red_tiles)} 次（{', '.join(red_tiles)}）——"
+                                "整片最多一次，用多了红色就不再是重点")
 
     music = data.get("music")
     if music:
@@ -444,11 +772,17 @@ def main() -> int:
     rep = Report()
     kinds = kinds_from_code(project)
     transitions = transitions_from_code(project)
+    motions = motions_from_code(project)
+    layouts = layouts_from_code(project)
     if kinds:
         print(f"[preflight] 视觉类型从 src/timeline.ts 读到 {len(kinds)} 种")
     if transitions:
         print(f"[preflight] 转场从 src/transitions.ts 读到 {len(transitions)} 种")
-    data = check_script(project, rep, kinds, transitions)
+    if motions:
+        print(f"[preflight] 入场配方从 src/timeline.ts 读到 {len(motions)} 种")
+    if layouts:
+        print(f"[preflight] 版式变体从 src/timeline.ts 读到 {len(layouts)} 种")
+    data = check_script(project, rep, kinds, transitions, motions, layouts)
     check_env(project, rep)
 
     print(f"[preflight] 项目 {project}")

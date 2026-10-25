@@ -35,8 +35,8 @@ export type VisualKind =
 /**
  * 运镜（轴一：整幅怎么动）。
  *
- * 跟 elementMotion（轴二：画面里什么在动）是两根独立的轴——
- * 只做运镜画面还是死的，只做元素运动镜头是死的。
+ * 跟 motion（轴二：内容怎么进场）是两根独立的轴——
+ * 只做运镜画面还是死的，只做内容运动镜头是死的。
  *
  * 幅度都刻意压得很小：排版已经吃掉画面 90% 的宽度，
  * 推近超过 4% 就会把末两个字切掉（实测过）。
@@ -62,6 +62,58 @@ export type PieceIn =
   | "slap"       // 从大到小"啪"地贴上
   | "pop";       // 原地放大归位
 
+/** 镜头间的转场。只支持硬切与交叠淡入淡出，默认 cut */
+export type ShotTransition = "cut" | "crossfade";
+
+/**
+ * 一个镜头（beat 内的子段落）。时间单位是秒，相对本拍开头；运行时 ×fps 转帧。
+ *
+ * 镜头边界锚在词级时间戳上：旁白念到哪句，画面就切到哪个镜头。
+ * 只有 kinetic 支持（v1），其余 kind 写 shots 会被 preflight 挡掉。
+ */
+export type ShotSpec = {
+  /** 镜头起点（秒，相对拍开头）。省略 = 接上一镜结尾（首镜 = 0） */
+  from?: number;
+  /** 镜头终点（秒，相对拍开头）。省略 = 下一镜开头（末镜 = 拍尾） */
+  to?: number;
+  /** 本镜头单独上屏的词（kinetic）；省略 = 该窗口内的旁白从句 */
+  words?: string[];
+  /** 入场配方。省略 = 按全局 shot 序号轮换 */
+  motion?: MotionRecipe;
+  /** 版式变体。省略 = 继承拍级 layout */
+  layout?: LayoutMode;
+  /** 本镜头怎么进，默认 "cut" */
+  transition?: ShotTransition;
+};
+
+/**
+ * 入场配方（轴二：画面内容怎么进场）。
+ *
+ * 不写 `motion` 时按拍序自动轮换（见 BeatPresence.tsx 的 ORDER），
+ * 相邻拍保证不同；要精确控制就显式指定。`flip` 不在轮换表里，
+ * 想用必须手写——它最适合"翻到下一章"式的拍。
+ */
+export type MotionRecipe =
+  | "stamp"   // 盖章：从 1.18 倍缩放压下来，spring 过冲归位，配 4 帧淡入
+  | "wipe"    // 揭开：clip-path 从下往上卷开，全程不淡入
+  | "rise"    // 升起：从下方 56px 升入，配 12 帧淡入
+  | "flip"    // 翻页：绕 Y 轴 -16° 转正，不淡入（仅手动）
+  | "build"   // 搭积木：整幅不进厂，元素按词卡点逐项出现
+  | "drift";  // 漂入：从右往左平移归位，配 8 帧淡入
+
+/**
+ * 版式变体（同一组件换一种摆法）。
+ *
+ * 不写 `layout` 用组件默认（大多是居中卡片）。不做自动轮换：
+ * full-bleed / bottom-third 需要 image，自动切版式会破坏构图。
+ */
+export type LayoutMode =
+  | "center"        // 组件默认：居中卡片
+  | "left-edge"     // 靠左缘排版，打破每页居中
+  | "full-bleed"    // 图片铺满整幅，文字压在图上（需要 image）
+  | "split"         // 左右分栏（stat / compare 类）
+  | "bottom-third"; // 内容落在画面下三分之一，上方留给图
+
 /**
  * 碎片：底图上的一个矩形块（坐标相对整幅画面，0-1）。
  *
@@ -83,7 +135,71 @@ export type PieceSpec = {
   spin?: number;
 };
 
-export type RoutePoint = { x: number; y: number; label: string; detail?: string };export type CalloutNote = {
+export type RoutePoint = { x: number; y: number; label: string; detail?: string };
+
+/* ---------------- 抠图元素（cutouts） ---------------- */
+
+/** 抠图元素的入场动作。比 MotionRecipe 多一个 drop：纸片元素适合"落下来"。 */
+export type CutoutEnter =
+  | "pop"        // 原地放大归位
+  | "drop"       // 从上方落下，落地压扁回弹
+  | "rise"       // 从下方升入
+  | "fly_left"   // 从左边甩进来
+  | "fly_right"  // 从右边甩进来
+  | "stamp";     // 从大到小"啪"地贴上
+
+/**
+ * 平底元素图（`img/xxx-cut.png`）的一份摆位。
+ *
+ * 和 pieces 的区别：pieces 是把**一张**合成图切块拼回去；cutouts 是
+ * **分别生成**的独立元素，各自入场、各自运动——元素之间可以遮挡，
+ * 也可以一个掉下去露出后面的另一个。
+ *
+ * 坐标是**中心点**（0-1），w 是宽度占画幅的比例；高度按图片比例自动。
+ */
+export type CutoutSpec = {
+  /** `img/xxx-cut.png`（相对 public/） */
+  src: string;
+  /** 中心点，0-1 */
+  x: number;
+  y: number;
+  /** 宽度占画幅比例 0-1 */
+  w: number;
+  /** 0 = 远（漂移小），1 = 近（漂移大）。默认 0.5 */
+  depth?: number;
+  /** 入场动作，默认 pop */
+  enter?: CutoutEnter;
+  /** 念到这个词才入场。省略 = 拍开头；旁白里找不到则回落到拍开头 */
+  at?: string;
+  /** 念到这个词开始坠落出画（方盖掉进洞里用这个） */
+  fall?: string;
+  /** 常态旋转角度（度） */
+  rotate?: number;
+  /** 入场时的额外旋转，默认按 enter 给一点 */
+  spin?: number;
+  /** 压在内文之上。默认 false：元素在内容层下面 */
+  front?: boolean;
+  /** 不透明度，默认 1 */
+  opacity?: number;
+  /**
+   * 程序投影的模糊半径（px）。默认 20；素材自带烘焙阴影时写 0，
+   * 否则会有两层影子。
+   */
+  shadow?: number;
+  /**
+   * 与背景的混合方式。素材自带浅色投影、压在浅色纸面上会发亮，
+   * 用 "multiply" 让浅色融回纸面（深色部分基本不变）。默认 normal。
+   */
+  blend?: "normal" | "multiply";
+  /**
+   * 印刷化处理：去色 + 提高对比 + 红色偏移剪影 + multiply 融入纸面。
+   * 写实渲染的素材在"档案纸拼贴"的风格里必须过这一道，否则一眼是贴图。
+   * 默认 false（兼容旧项目；风格板规范的新项目应打开）。
+   */
+  print?: boolean;
+};
+
+export type CalloutNote = {
   x: number;
   y: number;
   text: string;
@@ -110,12 +226,44 @@ export type StageLayer = {
   y?: number;
 };
 
+/* ---------------- 批注（notes） ---------------- */export type NoteKind = "arrow" | "circle" | "measure" | "tag" | "stamp" | "shape";
+
+/**
+ * 画在纸上的批注。不是装饰贴纸，是"编辑用红笔标过"的那一层：
+ * 箭头指向论点、圈住数字、量线标出宽度、印章压一句结论。
+ *
+ * 坐标是**画幅百分比**（0-100）：x/y 是锚点（圈=圆心、箭头/量线=起点、
+ * 标签/印章/图形=中心）。w/h 是像素：圈=直径、箭头/量线=位移、图形=边长。
+ * 时间 `at` 是拍内秒数，到点后 12-14 帧"画"进去。
+ */
+export type NoteSpec = {
+  kind: NoteKind;
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+  rot?: number;
+  /** tag / stamp / measure 上的字。tag 建议 ≤ 6 字，stamp ≤ 4 字 */
+  text?: string;
+  /** kind=shape 时的形状 */
+  shape?: "square" | "circle" | "triangle" | "reuleaux" | "hex";
+  /** 拍内出现时间（秒），默认 0.6 */
+  at?: number;
+  /** 默认正红（记号色）；ink 用于不想抢戏的补充说明 */
+  color?: "red" | "ink";
+};
+
+/** 纸片字的版式。auto = 按字数与种子自动挑（短词标签 / 中长便签 / 长句长条） */
+export type TileVariant = "cut" | "note" | "clip" | "label" | "banner" | "red";
+
 export type VisualSpec = {
   kind: VisualKind;
   /** kinetic：要上屏的词，必须与 narration 词序一致 */
   words?: string[];
   /** kinetic / chart：这些词用强调色处理 */
   emphasis?: string[];
+  /** 强调词的纸片版式。默认 auto；写死某种只适合'全片唯一一句'的场合 */
+  tile?: TileVariant | "auto";
   /** stat / odometer / chart */
   value?: number;
   unit?: string;
@@ -183,6 +331,12 @@ export type VisualSpec = {
   camera?: CameraMove;
   /** 轴二：这一拍画面里什么在动（写给实现看的，也是反单调的检查项） */
   elementMotion?: string;
+  /** 入场配方。不写按拍序自动轮换，见 MotionRecipe */
+  motion?: MotionRecipe;
+  /** 版式变体。不写用组件默认，见 LayoutMode */
+  layout?: LayoutMode;
+  /** beat 内镜头拆分（仅 kinetic），见 references/components.md */
+  shots?: ShotSpec[];
   /** 程序化特效：纸屑雨 / 冲击放射 */
   vfx?: VfxKind;
   /**
@@ -191,6 +345,14 @@ export type VisualSpec = {
    */
   pieceBase?: string;
   pieces?: PieceSpec[];
+  /**
+   * 独立抠图元素：分别生成、分别入场，可以互相遮挡。
+   * 与 `pieces`（一张底图切块）是两条路，同一拍不要混用。
+   */
+  cutouts?: CutoutSpec[];
+  /** 红笔批注层。见 NoteSpec；画在内容之上、字幕之下。
+   *  字段名避开 `notes`——callout 拍的 notes 是图上的圈注，语义不同。 */
+  annotations?: NoteSpec[];
 };
 
 export type SideSpec = {
@@ -198,6 +360,12 @@ export type SideSpec = {
   value?: string;
   detail?: string;
   accent?: string;
+  /**
+   * 栏内的图形符号（程序化，不用素材）。对比拍的两栏经常只有标题和一句说明，
+   * 中间会空掉一大块纸——补一个"剪出来的形状"既填了版面，也直接是论点本身
+   * （方盖 vs 圆盖、勒洛三角 vs 圆形）。
+   */
+  mark?: "square" | "circle" | "triangle" | "reuleaux" | "hex";
 };
 
 export type Beat = {

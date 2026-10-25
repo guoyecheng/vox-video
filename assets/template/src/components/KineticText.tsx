@@ -12,6 +12,9 @@ import { FONT_DISPLAY, FONT_NUMERAL } from "../fonts";
 import type { Beat, VisualSpec } from "../timeline";
 import { useBeatPresence, useStage, resolveWordTimings, makeEmphasisMatcher } from "./BeatPresence";
 import { floatAt } from "../effects";
+import { hash01, BrushUnderline } from "../paper";
+import { splitByEmphasis } from "../words";
+import { PaperTile } from "./PaperTile";
 
 const LATIN_ONLY = /^[0-9A-Za-z\s.,:%$€£+\-–—/()'"&]+$/;
 
@@ -37,7 +40,8 @@ export const KineticText: React.FC<{
 
   const timings = resolveWordTimings(shown, beat.words);
   const isEmphasis = makeEmphasisMatcher(visual.emphasis);
-  const alignLeft = visual.align === "left";
+  const layout = visual.layout ?? "center";
+  const alignLeft = visual.align === "left" || layout === "left-edge";
   const toneNight = tone === "night";
   const ink = toneNight ? COLORS.nightInk : COLORS.ink;
 
@@ -51,10 +55,29 @@ export const KineticText: React.FC<{
   const fitWidth = Math.floor(maxWidth / longest);
   const lineHeight = 1.12;
   const rowGapRatio = 0.14;
-  const fitHeight = Math.floor(
-    (height - 270) / Math.max(1, shown.length * lineHeight + (shown.length - 1) * rowGapRatio),
-  );
+  // 底部字幕条常驻：56px 字号 + 上下 padding + 96px 底距 ≈ 210px，
+  // 再留 30px 呼吸。运镜会整幅放大（push_in ×1.035、whip ×1.2），
+  // 放大会把内容继续往下推，所以留白要按缩放后的底边算，不能只看未缩放的排版。
+  // bottom-third 锚在下缘，被放大的幅度最大，单独多让 40px。
+  const bottomPad = layout === "bottom-third" ? 280 : 240;
+  // 强调词比正文高 16%，算总高度时不能漏——漏了就会行数一多就溢出。
+  const emphasisLift = 0.16 * lineHeight;
+  const rowUnits =
+    shown.length * lineHeight +
+    (shown.length - 1) * rowGapRatio +
+    shown.filter(isEmphasis).length * emphasisLift;
+  const fitHeight = Math.floor((height - 140 - bottomPad) / Math.max(1, rowUnits));
   const size = Math.max(56, Math.min(104, fitWidth, fitHeight));
+
+  // 胶带只贴第一张纸片：每拍两张都贴会读成"手工作业"，而不是"编辑挑了一句"
+  const heroIdx = shown.map((w, i) => (isEmphasis(w) ? i : -1)).filter((i) => i >= 0);
+  const tapeOn = heroIdx.length ? heroIdx[0] : -1;
+  // 每拍最多两张纸片。三张以上字就碎了，强调也不再是强调——
+  // 多出来的强调词退回"放大 + 红线"，语气还在，体量不再膨胀。
+  const tiled = new Set(heroIdx.slice(0, 2));
+
+  // 每词的随机量按"全片帧号 + 词序"取，切镜后同一个词不会突然换个角度
+  const safeFrom = Math.max(0, Math.round(Number.isFinite(beat.from) ? beat.from : 0));
 
   return (
     <div
@@ -63,10 +86,14 @@ export const KineticText: React.FC<{
         inset: 0,
         display: "flex",
         flexDirection: "column",
-        justifyContent: "center",
+        justifyContent: layout === "bottom-third" ? "flex-end" : "center",
         alignItems: alignLeft ? "flex-start" : "center",
-        // 上下留出角标和出处条的位置，内容再大也不会压到它们
-        padding: `140px ${pad}px 130px`,
+        // 上留角标、下留字幕条，内容再大也不会压到它们；
+        // bottom-third 锚在下缘、full-bleed 贴边（配图用），其余居中
+        padding:
+          layout === "full-bleed"
+            ? `80px ${pad}px 90px`
+            : `140px ${pad}px ${bottomPad}px`,
       }}
     >
       <div
@@ -83,21 +110,25 @@ export const KineticText: React.FC<{
       >
         {shown.map((word, i) => {
           const t = timings[i]?.t ?? i * 12;
-          const d = timings[i]?.d ?? 9;
 
-          // 入场：上移 + 缩放，6 帧内完成（太快看不清，太慢拖节奏）
-          const pop = interpolate(frame, [t, t + 6], [0, 1], {
+          // 每词的入场在同一个语法里留一点差异：旋转、落定速度、偶尔的侧贴。
+          // 全片同一个 pop 会让整段字读成"模板在播放"，而不是"一张张摆上去"。
+          const seed = i * 37 + 11 + (safeFrom % 97);
+          const popSpan = 6 + Math.round(hash01(seed + 9) * 3);
+          const pop = interpolate(frame, [t, t + popSpan], [0, 1], {
             extrapolateLeft: "clamp",
             extrapolateRight: "clamp",
           });
+          const rot0 = (hash01(seed + 5) - 0.5) * 3.4;
+          const side =
+            hash01(seed + 3) > 0.66 ? (hash01(seed + 11) > 0.5 ? 1 : -1) * size * 0.12 : 0;
 
-          // 念到之后短暂高亮再回落，给"刚刚说了这句"一个视觉回声
-          const echo = interpolate(
-            frame,
-            [t, t + Math.max(4, d * 0.35), t + Math.max(6, d)],
-            [1, 1, 0],
-            { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-          );
+          // 强调词不再套一圈发光框（那是 UI 的语法）：去掉纸底下那一条红笔线，
+          // 换成一张贴上去的纸片——划线仍然保留在纸片上，和旁白落在同一个词上。
+          const draw = interpolate(frame, [t + 1, t + 9], [0, 1], {
+            extrapolateLeft: "clamp",
+            extrapolateRight: "clamp",
+          });
 
           const hot = isEmphasis(word);
           const latin = LATIN_ONLY.test(word) && /\d/.test(word);
@@ -106,23 +137,76 @@ export const KineticText: React.FC<{
           // 看起来像画布在抖而不是字在呼吸。乘 pop 是为了入场前不预位移。
           const bob = floatAt(frame, 8, 88, i) * pop;
 
+          if (hot && tiled.has(i)) {
+            // 强调只贴短语本身："是几何"里应该是"几何"这张纸片，"是"还是正文
+            const raw = splitByEmphasis(word, visual.emphasis);
+            const parts = raw.some((p) => p.hot) ? raw : [{ text: word, hot: true }];
+            return (
+              <span
+                key={`${word}-${i}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  justifyContent: alignLeft ? "flex-start" : "center",
+                  flexWrap: "wrap",
+                  maxWidth: "100%",
+                }}
+              >
+                {parts.map((p, k) =>
+                  p.hot ? (
+                    <PaperTile
+                      key={k}
+                      text={p.text}
+                      at={t}
+                      seed={seed + k * 7}
+                      size={size * 1.08}
+                      variant={visual.tile ?? "auto"}
+                      order={heroIdx.indexOf(i)}
+                      underline={draw}
+                      tape={tapeOn === i}
+                    />
+                  ) : (
+                    <span
+                      key={k}
+                      style={{
+                        display: "inline-block",
+                        fontFamily: latin ? FONT_NUMERAL : FONT_DISPLAY,
+                        fontWeight: latin ? 400 : 900,
+                        fontSize: size,
+                        lineHeight: 1.12,
+                        letterSpacing: 1,
+                        color: ink,
+                        opacity: pop,
+                        transform: `translateY(${(1 - pop) * size * 0.24}px)`,
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {p.text}
+                    </span>
+                  ),
+                )}
+              </span>
+            );
+          }
+
           return (
             <span
               key={`${word}-${i}`}
               style={{
                 display: "inline-block",
-                // 强调词的回声框用 position:absolute + inset:0 贴住这个词。
-                // 这里必须显式 relative：否则框会去找更外层的定位祖先，
-                // 一不小心就撑满整个画幅（现在只是因为父级恰好有 transform 才碰巧正确）。
+                // 红线用 position:absolute 贴住词底，所以这里必须显式 relative：
+                // 否则线会去找更外层的定位祖先，一不留神就撑满整个画幅。
                 position: "relative",
                 fontFamily: latin ? FONT_NUMERAL : FONT_DISPLAY,
                 fontWeight: latin ? 400 : 900,
                 fontSize: hot ? size * 1.16 : size,
                 lineHeight: 1.12,
                 letterSpacing: 1,
-                color: hot ? accent : ink,
+                color: ink,
                 opacity: pop,
-                transform: `translateY(${(1 - pop) * size * 0.3 + bob}px) scale(${0.82 + pop * 0.18})`,
+                transform: `translate(${(side * (1 - pop)).toFixed(1)}px, ${
+                  (1 - pop) * size * 0.26 + bob
+                }px) rotate(${(rot0 * (1 - pop)).toFixed(2)}deg) scale(${(0.86 + pop * 0.14).toFixed(3)})`,
                 transformOrigin: "left bottom",
                 // 字号已经按最长词组算过了，正常情况下每组都独占一行不换行。
                 // 这里仍然允许换行——万一有超长内容，宁可折行也不要冲出画幅。
@@ -131,15 +215,13 @@ export const KineticText: React.FC<{
               }}
             >
               {word}
-              {hot && echo > 0.01 ? (
-                <span
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    borderRadius: 10,
-                    boxShadow: `0 0 0 ${Math.round(echo * 10)}px ${accent}55`,
-                    pointerEvents: "none",
-                  }}
+              {hot ? (
+                // 超过两张纸片的强调词退回"红笔线"：语气还在，版面不碎
+                <BrushUnderline
+                  p={draw}
+                  color={COLORS.accent}
+                  seed={i + 5}
+                  thickness={Math.max(6, Math.round(size * 0.085))}
                 />
               ) : null}
             </span>

@@ -102,8 +102,9 @@
       "expectations": [
         "script.json 顶层写了 arc（叙事弧），取值在 references/arcs.md 列出的合法集合里",
         "相邻两拍的 visual.camera 不相同（反单调检查项）",
-        "每一拍都写了 visual.elementMotion（轴二），没有哪一拍是两根轴少一根",
+        "visual.motion 相邻两拍不相同——不写会按拍序自动轮换（相邻保证不同），显式写重了会被 check_rhythm.py 报错",
         "每拍用了不同的 camera 取值中的至少 3 种（push_in/pull_out/pan/tilt/parallax/whip/static）",
+        "visual.layout 没有连续 3 拍以上全部缺省（全片居中卡片 = PPT 感，check_rhythm.py 会提示）",
         "如果片子带配乐：music.src 指向 public/ 下真实存在的文件，且 gain ≤ 0.45、duck ≥ 0.4",
         "配乐在有人说话时确实让路：说话段与间隙段的音乐电平比值 > 1.3（差分渲染实测，不是听感判断）",
         "开渲前跑过 preflight.py 且判定为通过"
@@ -148,6 +149,19 @@
         "块与块之间有 PAD 重叠（≥0.003），且投影在落位后归零",
         "只重渲染这一拍抽帧可见：首帧是挖了洞的底图，末帧是无缝的完整图",
         "该拍的旁白音频与改动前一致（未重跑 TTS 也能对上），timeline 里该拍 durationInFrames 未变"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "这条片子里有一段 6 秒的 kinetic 长拍，整段画面几乎不动，帮我把它拆成 2-3 个镜头，节奏跟上旁白。",
+      "expected_output": "该拍 visual.shots 写 2-3 条镜头，边界落在旁白从句上，镜头配方互不相同",
+      "files": [],
+      "expectations": [
+        "该拍 visual.shots 有 2-4 条",
+        "每条 shots 的 from/to（秒，相对拍开头）与旁白从句边界对应，末镜覆盖到拍尾",
+        "相邻镜头的 motion 不同（显式写的不能重复，没写的按全局镜头序号轮换）",
+        "preflight.py 通过（shots 结构、枚举、kind 合法）",
+        "check_rhythm.py 无镜头级相邻配方重复"
       ]
     }
   ]

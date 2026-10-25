@@ -61,65 +61,69 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
     extrapolateRight: "clamp",
   });
 
-  return (
+  const layout = visual.layout ?? "center";
+  const isLeft = layout === "left-edge";
+  const isSplit = layout === "split";
+  const isBottom = layout === "bottom-third";
+  const isBleed = layout === "full-bleed";
+
+  const numberGroup = (
     <div
       style={{
-        position: "absolute",
-        inset: 0,
         display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 26,
-        padding: `0 ${pad}px`,
+        alignItems: "baseline",
+        gap: 20,
+        opacity: presence,
+        transform: `scale(${0.9 + presence * 0.1})`,
       }}
     >
-      <div
+      {visual.prefix ? (
+        <span style={{ fontFamily: FONT_NUMERAL, fontSize: 96, color: accent, fontWeight: 900 }}>
+          {visual.prefix}
+        </span>
+      ) : null}
+
+      <span
         style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 20,
-          opacity: presence,
-          transform: `scale(${0.9 + presence * 0.1})`,
+          fontFamily: FONT_NUMERAL,
+          fontSize: 320,
+          lineHeight: 0.92,
+          fontWeight: 900,
+          color: COLORS.ink,
+          letterSpacing: -8,
+          // 数字刷新时轻微抖动一下，强化"在长"的感受
+          filter: `drop-shadow(0 10px 40px ${accent}33)`,
         }}
       >
-        {visual.prefix ? (
-          <span style={{ fontFamily: FONT_NUMERAL, fontSize: 96, color: accent, fontWeight: 900 }}>
-            {visual.prefix}
-          </span>
-        ) : null}
+        {shown}
+      </span>
 
+      {visual.unit ? (
         <span
           style={{
-            fontFamily: FONT_NUMERAL,
-            fontSize: 320,
-            lineHeight: 0.92,
+            fontFamily: FONT_DISPLAY,
             fontWeight: 900,
-            color: COLORS.ink,
-            letterSpacing: -8,
-            // 数字刷新时轻微抖动一下，强化"在长"的感受
-            filter: `drop-shadow(0 10px 40px ${accent}33)`,
+            fontSize: 128,
+            color: accent,
+            opacity: unitP,
+            transform: `translateX(${(1 - unitP) * 24}px)`,
           }}
         >
-          {shown}
+          {visual.unit}
         </span>
+      ) : null}
+    </div>
+  );
 
-        {visual.unit ? (
-          <span
-            style={{
-              fontFamily: FONT_DISPLAY,
-              fontWeight: 900,
-              fontSize: 128,
-              color: accent,
-              opacity: unitP,
-              transform: `translateX(${(1 - unitP) * 24}px)`,
-            }}
-          >
-            {visual.unit}
-          </span>
-        ) : null}
-      </div>
-
+  const meta = (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 18,
+        alignItems: isLeft || isSplit ? "flex-start" : "center",
+      }}
+    >
       {visual.label ? (
         <div
           style={{
@@ -142,8 +146,8 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
             fontFamily: FONT_BODY,
             fontSize: 32,
             color: COLORS.inkSoft,
-            maxWidth: 1000,
-            textAlign: "center",
+            maxWidth: isSplit ? 700 : 1000,
+            textAlign: isLeft || isSplit ? "left" : "center",
             lineHeight: 1.5,
             opacity: unitP * 0.9,
           }}
@@ -151,6 +155,28 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
           {visual.suffix}
         </div>
       ) : null}
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        flexDirection: isSplit ? "row" : "column",
+        alignItems: isLeft ? "flex-start" : "center",
+        justifyContent: isBottom ? "flex-end" : "center",
+        gap: isSplit ? 90 : 26,
+        padding: isBleed
+          ? `80px ${pad}px 90px`
+          : isBottom
+            ? `0 ${pad}px 190px`
+            : `0 ${pad}px`,
+      }}
+    >
+      {numberGroup}
+      {meta}
 
       {visual.source ? (
         <div

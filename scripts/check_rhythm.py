@@ -10,9 +10,10 @@
 ------
 1. 视觉重复度      —— 同一种 kind 连续出现 / 某种 kind 占比过高
 2. 转场重复度      —— 相邻两拍用同一种转场（等于没转）
-3. 全画面冲击上限  —— impact/flash 作用于整画面，按"大 slam"计，全片 ≤3
-4. 字号下限        —— 扫组件源码，1080p 下正文 ≥32px、主叙事 ≥56px
-5. 能量骨架        —— 首拍必须是 hook，末拍必须收束
+3. 入场配方重复度  —— 相邻两拍同一种入场配方（自动轮换不会重复，报出来就是手写写重）
+4. 全画面冲击上限  —— impact/flash 作用于整画面，按"大 slam"计，全片 ≤3
+5. 字号下限        —— 扫组件源码，1080p 下正文 ≥32px、主叙事 ≥56px
+6. 能量骨架        —— 首拍必须是 hook，末拍必须收束
 
 用法
 ----
@@ -110,6 +111,148 @@ def check_transitions(beats: list[dict]) -> tuple[list[str], list[str]]:
         problems.append(f"全片只用了一种转场（{names[0]}）")
         out.append(f"   {FAIL} 转场单一")
 
+    return out, problems
+
+
+# 与 assets/template/src/components/BeatPresence.tsx 的 autoMotion 保持一致：
+# 不写 motion 的拍按拍序轮换，build 落在不可 build 的 kind 上时用 drift 顶替。
+ORDER = ["stamp", "build", "wipe", "rise", "drift"]
+BUILDABLE_KINDS = {"kinetic", "stat", "odometer", "cards", "stack",
+                   "compare", "split", "timeline", "chart", "callout", "route"}
+
+
+def _auto_recipe(cursor: int, kind: str | None) -> str:
+    recipe = ORDER[cursor % len(ORDER)]
+    return "drift" if recipe == "build" and kind not in BUILDABLE_KINDS else recipe
+
+
+def effective_motion(beats: list[dict]) -> list[str]:
+    """每拍实际生效的入场配方：显式 motion 优先，否则按**全局镜头序号**轮换。
+
+    带显式 shots 的拍取首镜头配方（拍级检查只看得到一个值，镜头级由
+    check_shot_rhythm 负责）；游标按镜头数累加，和运行时的全局序号一致。
+    """
+    out = []
+    cursor = 0
+    for b in beats:
+        v = b.get("visual") or {}
+        kind = v.get("kind")
+        shots = v.get("shots")
+        if isinstance(shots, list) and shots and kind == "kinetic":
+            first = shots[0] if isinstance(shots[0], dict) else {}
+            out.append(first.get("motion") or _auto_recipe(cursor, kind))
+            cursor += len(shots)
+            continue
+        out.append(v.get("motion") or _auto_recipe(cursor, kind))
+        cursor += 1
+    return out
+
+
+def check_shot_rhythm(beats: list[dict]) -> tuple[list[str], list[str]]:
+    """镜头级配方平铺：显式 shots 按条展开，没写 shots 的拍按 1 镜头计。
+
+    两条不确定性要分清楚，否则会把自动拆分的车读到显式值头上：
+    - 带词流的 kinetic 拍运行时会自动拆成几镜，脚本里算不出——它之后所有
+      自动配方的**序号**都不确定（游标可能多走几格），它的**末镜**配方也不确定。
+      这类接缝只提示，不判失败。
+    - 显式镜头数确定，游标保持精确，所以显式值之间的相邻重复是真错。
+    """
+    out, problems = [], []
+    # (标签, 配方, 是否手写, 值是否精确, 是否一定是上一镜)
+    seq: list[tuple[str, str, bool, bool, bool]] = []
+    cursor = 0
+    cursor_exact = True
+    auto = 0
+    split_unknown = 0
+
+    for i, b in enumerate(beats):
+        v = b.get("visual") or {}
+        kind = v.get("kind")
+        shots = v.get("shots")
+        bid = str(b.get("id", i))
+        kinetic = kind == "kinetic"
+        if isinstance(shots, list) and shots and kinetic:
+            for j, s in enumerate(shots):
+                m = (s or {}).get("motion") if isinstance(s, dict) else None
+                seq.append((f"{bid}.s{j}", m or _auto_recipe(cursor, kind),
+                            bool(m), bool(m) or cursor_exact, True))
+                cursor += 1
+            continue
+
+        m = v.get("motion")
+        may_split = kinetic and bool(b.get("words"))
+        seq.append((bid, m or _auto_recipe(cursor, kind), bool(m),
+                    bool(m) or cursor_exact, not may_split))
+        cursor += 1
+        auto += 1
+        if may_split:
+            cursor_exact = False
+            split_unknown += 1
+
+    dups, maybe = [], []
+    for i in range(1, len(seq)):
+        a, b = seq[i - 1], seq[i]
+        if a[1] != b[1]:
+            continue
+        if a[3] and b[3] and a[4]:
+            dups.append((a[0], b[0], b[1]))
+        else:
+            maybe.append((a[0], b[0], b[1]))
+
+    out.append(f"\n镜头级配方：{len(seq)} 镜 / {len(beats)} 拍")
+    if auto:
+        out.append(f"   没写 shots 的 {auto} 拍各按 1 镜头计"
+                   "（自动拆分运行时可能更多，全局序号已保证不重复）")
+    if split_unknown:
+        out.append(f"   {WARN} {split_unknown} 拍带词流但没写 shots，运行时会自动拆镜——"
+                   "它们之后的自动配方序号算不准，相关接缝只提示不判失败")
+    if dups:
+        pairs = "、".join(f"{a}→{b}({m})" for a, b, m in dups)
+        problems.append(f"相邻镜头入场配方相同：{pairs}——显式 motion 写重了")
+        out.append(f"   {FAIL} 相邻重复 {len(dups)} 处")
+    else:
+        out.append(f"   {OK} 相邻镜头无重复")
+    if maybe:
+        pairs = "、".join(f"{a}→{b}({m})" for a, b, m in maybe)
+        out.append(f"   {WARN} 另有 {len(maybe)} 处序号不确定的同配方接缝：{pairs}")
+    return out, problems
+
+
+def check_motion_variety(beats: list[dict]) -> tuple[list[str], list[str]]:
+    out, problems = [], []
+    motions = effective_motion(beats)
+    # 带 shots 的拍在拍级只看得见首镜；首镜≠末镜，真正的相邻由镜头级检查负责
+    has_shots = []
+    for b in beats:
+        v = b.get("visual") or {}
+        has_shots.append(v.get("kind") == "kinetic"
+                         and isinstance(v.get("shots"), list) and bool(v.get("shots")))
+    cnt = Counter(motions)
+    out.append(f"\n入场配方分布：{len(cnt)} 种 / {len(beats)} 拍（没写的按拍序自动轮换）")
+    for k, n in cnt.most_common():
+        out.append(f"   {k:<10} {n:>2}  {'#' * n}")
+
+    dup = [i for i in range(1, len(motions))
+           if motions[i] == motions[i - 1] and not (has_shots[i] or has_shots[i - 1])]
+    skipped = [i for i in range(1, len(motions)) if has_shots[i] or has_shots[i - 1]]
+    if dup:
+        problems.append("相邻两拍入场配方相同（接缝 " + "、".join(str(i) for i in dup)
+                        + "）——自动轮换不会重复，这是显式 motion 写重了")
+        out.append(f"   {FAIL} 相邻重复（不写会自动错开）")
+    else:
+        out.append(f"   {OK} 无相邻重复")
+    if skipped:
+        out.append(f"   {WARN} {len(skipped)} 处接缝含带 shots 的拍——"
+                   "拍级比的是首镜，真正的相邻镜由镜头级检查负责")
+
+    # layout 不自动轮换：连续多拍不写 layout 就是连续多张居中卡片，这正是 PPT 感
+    run = cur = 0
+    for b in beats:
+        cur = 0 if (b.get("visual") or {}).get("layout") else cur + 1
+        run = max(run, cur)
+    if run >= 3:
+        out.append(f"   {WARN} 最长连续 {run} 拍没写 layout（都落回居中卡片）——"
+                   "挑几拍写 left-edge / bottom-third / split 破一破")
     return out, problems
 
 
@@ -221,8 +364,8 @@ def main() -> None:
     src = Path(args.src) if args.src else project / "src"
 
     sections, problems = [], []
-    for fn in (check_visual_variety, check_transitions, check_impact_budget,
-               check_font_floor, check_arc):
+    for fn in (check_visual_variety, check_transitions, check_motion_variety,
+               check_shot_rhythm, check_impact_budget, check_font_floor, check_arc):
         out, probs = fn(beats) if fn not in (check_font_floor,) else fn(src)
         sections.extend(out)
         problems.extend(probs)

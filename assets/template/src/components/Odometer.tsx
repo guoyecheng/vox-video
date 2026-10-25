@@ -13,9 +13,11 @@
  */
 
 import React from "react";
+import { useCurrentFrame } from "remotion";
 import { COLORS } from "../theme";
 import { FONT_BODY, FONT_NUMERAL } from "../fonts";
 import type { Beat, VisualSpec } from "../timeline";
+import { PAPER, PaperSheet, Tape, sway } from "../paper";
 import { useBeatPresence, useBeatWords, useStage, resolveWordTimings } from "./BeatPresence";
 
 const DIGITS = "0123456789";
@@ -28,11 +30,11 @@ const DIGIT_FONT = 112;
 export const Odometer: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }> = ({
   beat,
   visual,
-  accent,
 }) => {
   const { presence } = useBeatPresence();
   const { after } = useBeatWords(beat.words);
   const { pad } = useStage();
+  const frame = useCurrentFrame();
 
   const target = Math.max(0, Math.round(visual.value ?? 0));
   const label = visual.label ?? "";
@@ -74,75 +76,103 @@ export const Odometer: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 28,
+        gap: 34,
         padding: `150px ${pad}px 170px`,
         opacity: presence,
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 6,
-          padding: "28px 40px",
-          background: COLORS.ink,
-          borderRadius: 20,
-          boxShadow: `14px 14px 0 ${accent}55`,
-          border: `3px solid ${COLORS.ink}`,
-        }}
-      >
-        {cells.map((c, i) =>
-          c.sep ? (
-            // 分隔符不是数位：给它格高并靠底对齐，才不会掉出格子和数字错位
-            <span
-              key={`sep-${i}`}
-              style={{
-                width: 44,
-                height: CELL_H,
-                display: "flex",
-                alignItems: "flex-end",
-                justifyContent: "center",
-                paddingBottom: 20,
-                fontFamily: FONT_NUMERAL,
-                fontSize: DIGIT_FONT,
-                lineHeight: 1,
-                color: COLORS.inkFaint,
-              }}
-            >
-              {c.sep}
-            </span>
-          ) : (
-            <RollingDigit key={`d-${i}`} value={c.digit} />
-          ),
-        )}
-
-        {unit ? (
-          <span
+      {/* 一块墨色厚纸：不是仪表盘 UI，是从印厂样张上剪下来的一块黑版。
+          墨块保持平直硬边 + 毛边裁剪，圆角和内阴影都属于屏幕控件，不用。 */}
+      <div style={{ position: "relative", transform: `translate(${sway(frame, 61, 3).x}px, ${sway(frame, 61, 3).y}px)` }}>
+        <PaperSheet
+          seed={17}
+          rotate={-0.7}
+          radius={0}
+          rough={3.2}
+          color={COLORS.ink}
+          frame={frame}
+          driftAmp={1.4}
+          contentStyle={{ padding: "54px 52px 46px" }}
+        >
+          <Tape
+            seed={24}
+            width={168}
+            height={44}
+            angle={-3.4}
+            style={{ left: "50%", top: -22, marginLeft: -84 }}
+          />
+          {/* 红色记号条：左上角压一小段，读作"这一条被标过" */}
+          <div
             style={{
-              fontFamily: FONT_BODY,
-              fontSize: 54,
-              fontWeight: 700,
-              color: accent,
-              marginLeft: 10,
-              paddingBottom: 26,
+              position: "absolute",
+              left: 44,
+              top: 30,
+              width: 76,
+              height: 9,
+              background: COLORS.accent,
+              transform: "rotate(-2.1deg)",
             }}
-          >
-            {unit}
-          </span>
-        ) : null}
+          />
+
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
+            {cells.map((c, i) =>
+              c.sep ? (
+                // 分隔符不是数位：给它格高并靠底对齐，才不会掉出格子和数字错位
+                <span
+                  key={`sep-${i}`}
+                  style={{
+                    width: 44,
+                    height: CELL_H,
+                    display: "flex",
+                    alignItems: "flex-end",
+                    justifyContent: "center",
+                    paddingBottom: 20,
+                    fontFamily: FONT_NUMERAL,
+                    fontSize: DIGIT_FONT,
+                    lineHeight: 1,
+                    color: PAPER.sheetWarm,
+                    opacity: 0.55,
+                  }}
+                >
+                  {c.sep}
+                </span>
+              ) : (
+                <RollingDigit key={`d-${i}`} value={c.digit} />
+              ),
+            )}
+
+            {unit ? (
+              <span
+                style={{
+                  fontFamily: FONT_BODY,
+                  fontSize: 54,
+                  fontWeight: 700,
+                  color: COLORS.gold,
+                  marginLeft: 14,
+                  paddingBottom: 30,
+                }}
+              >
+                {unit}
+              </span>
+            ) : null}
+          </div>
+        </PaperSheet>
       </div>
 
       {label ? (
-        <div
-          style={{
-            fontFamily: FONT_BODY,
-            fontSize: 44,
-            fontWeight: 700,
-            color: COLORS.inkSoft,
-            letterSpacing: 2,
-          }}
-        >
-          {label}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 68, height: 8, background: COLORS.accent, transform: "rotate(-1.6deg)" }} />
+          <div
+            style={{
+              fontFamily: FONT_BODY,
+              fontSize: 44,
+              fontWeight: 700,
+              color: COLORS.inkSoft,
+              letterSpacing: 2,
+            }}
+          >
+            {label}
+          </div>
         </div>
       ) : null}
     </div>
@@ -165,8 +195,10 @@ const RollingDigit: React.FC<{ value: number }> = ({ value }) => {
         height: CELL_H,
         overflow: "hidden",
         position: "relative",
-        borderRadius: 8,
-        background: "#0E1428",
+        // 数位窗：只在左右压一道极淡的墨线，读作"印版上的格位"，
+        // 不用深色格子——深色小方块是仪表盘 UI 的语言。
+        borderLeft: `1px solid rgba(248,241,224,0.16)`,
+        borderRight: `1px solid rgba(248,241,224,0.16)`,
       }}
     >
       <div

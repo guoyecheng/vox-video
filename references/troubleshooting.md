@@ -127,6 +127,11 @@ python "<skill>/scripts/verify_sync.py" --project "<项目>"
 差半帧不用管（TTS 的 boundary 本身就是 100ns 精度换算过来的）。
 差一拍以上才是词序问题。
 
+**每个镜头开头半秒空屏**（字总比声音晚到）：这是模板内部的对齐规则，不是稿子的问题。检查 `src/words.ts` 的 `resolveWordTimings` 是否还在
+匹配前剥掉标点——上屏词按旁白标点切成 `"有一种三角形，"`，而 edge-tts 的词流
+没有标点，两侧不剥就永远匹配不上，只能退回"按区间均匀铺开"。改这一处等于改
+全片的对位，改完必须抽镜头第一帧复看。
+
 ### 改了旁白但声音没变
 
 `vox_tts.py` 用「旁白+音色+语速」的 SHA1 做指纹判断缓存。
@@ -162,7 +167,7 @@ StatCard 的计数起点跟着旁白走。旁白把数字放在句尾时，滚�
 
 | 报错 | 原因与处理 |
 |---|---|
-| `RangeError: Frame NaN is not finite` | `spring()` 收到了 NaN。`BeatPresence.tsx` 里的 `safe()` 已做防护；自己写组件时，喂进 `spring` 的每个数都先过一遍 `Number.isFinite` |
+| `RangeError: Frame NaN is not finite` | `spring()` 收到了 NaN。`src/words.ts` 的 `safe()` 已做防护（`BeatPresence` 从那里导入）；自己写组件时，喂进 `spring` 的每个数都先过一遍 `Number.isFinite` |
 | `Malformed path data: M was expected to have numbers` | `clockWipe` / `iris` 需要画幅尺寸。无参调用时 Remotion 4.0.535 内部算出 `NaN` 半径，生成 `M NaN…` 路径，崩在渲染那一帧。模板的 `transitionFor()` 已统一喂尺寸；自己直接调这两个转场时也要传 `width` / `height` |
 | webpack 解析失败，错误信息巨长（列举所有尝试的后缀） | `src/components/` 下导入 `src/theme` 必须写 `../theme`，不是 `./theme` |
 | `Cannot find module './timeline.json'` | 没跑 `vox_tts.py`，或 `script.json` 解析失败。scaffold 会先放一份占位 timeline，所以正常不会遇到 |

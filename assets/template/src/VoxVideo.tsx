@@ -19,20 +19,33 @@ import React from "react";
 import { AbsoluteFill, Audio, Sequence, staticFile, useVideoConfig } from "remotion";
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
 import { BEATS, TIMELINE } from "./timeline";
+import { computeShots } from "./shots";
 import { BeatVisual } from "./visuals";
 import { CaptionTrack, ChapterProgress } from "./components";
 import { transitionFor } from "./transitions";
 import { Grain } from "./effects";
 import { FontGate } from "./fonts";
 import { MusicBed } from "./music";
+import { COLORS } from "./theme";
 
 export const VoxVideo: React.FC = () => {
   // clockWipe / iris 需要画幅尺寸，在组件顶层取一次，不在 map 回调里调 hook
-  const { width, height } = useVideoConfig();
+  const { width, height, fps } = useVideoConfig();
+
+  // 镜头拆分要按**全片**镜头序号轮换配方，所以游标跨拍累加——这样跨拍边界
+  // 的相邻两镜也不会撞同一套入场。纯函数预计算，空拍词流也不会有副作用。
+  const shotsByBeat = React.useMemo(() => {
+    let cursor = 0;
+    return BEATS.map((b) => {
+      const s = computeShots(b, cursor, fps);
+      cursor += s.length;
+      return s;
+    });
+  }, [fps]);
 
   return (
     <FontGate>
-    <AbsoluteFill style={{ backgroundColor: "#F4F1EA" }}>
+    <AbsoluteFill style={{ backgroundColor: COLORS.stage }}>
       {/* ---- 音频：按实测位置绝对摆放，不参与任何转场 ---- */}
       {BEATS.map((beat) =>
         beat.audioFrom === null ? null : (
@@ -73,6 +86,7 @@ export const VoxVideo: React.FC = () => {
                 index={i}
                 total={BEATS.length}
                 title={TIMELINE.title}
+                shots={shotsByBeat[i] ?? []}
               />
             </TransitionSeries.Sequence>,
           );

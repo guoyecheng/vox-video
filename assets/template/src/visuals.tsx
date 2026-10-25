@@ -10,33 +10,37 @@
  */
 
 import React from "react";
-import { AbsoluteFill } from "remotion";
+import { AbsoluteFill, Sequence } from "remotion";
 import type { FC } from "react";
 import { ACCENT_CYCLE } from "./theme";
 import type { Beat, VisualKind, VisualSpec } from "./timeline";
+import type { Shot } from "./shots";
+import { SHOT_FADE } from "./shots";
+import { ShotLayer } from "./ShotLayer";
 import {
-  BeatLabel,
   Callout,
   CardStack,
   Chart,
   CompareSplit,
+  CutoutLayer,
   Highlight,
   ImageCard,
   KineticText,
+  NoteLayer,
   Odometer,
   PaperStage,
   Person,
   PieceLayer,
   QuoteCard,
   Route,
+  RunningHead,
   Split,
   Stack,
   StatCard,
   TimelineRail,
-  TitleMark,
   useStage,
 } from "./components";
-import { AmbientLight, Confetti, Flash, LightSweep, Starburst, useAmbient, useCamera, useImpact } from "./effects";
+import { AmbientLight, Confetti, Flash, LightSweep, Starburst, useAmbient, useCamera } from "./effects";
 
 export type VisualProps = {
   beat: Beat;
@@ -73,15 +77,17 @@ export const BeatVisual: React.FC<{
   index: number;
   total: number;
   title: string;
-}> = ({ beat, index, total, title }) => {
+  shots: Shot[];
+}> = ({ beat, index, title, shots }) => {
   const Component = REGISTRY[beat.visual.kind] ?? KineticText;
   const accent = accentFor(index);
-  const tone = index === 0 || nightKinds.has(beat.visual.kind) ? "night" : "paper";
+  // 整片统一在"档案纸"上，只有引述拍落到暖墨黑。开场拍以前是深色，
+  // 但风格板要求同一张纸底——深底会把拼贴语言打断。
+  const tone = nightKinds.has(beat.visual.kind) ? "night" : "paper";
   const { pad } = useStage();
 
   // 镜头冲击落在这一拍第一个词上——旁白一开口，画面就"顶"一下
   const impactAt = beat.words.length ? Math.max(0, beat.words[0].t - 3) : 8;
-  const impact = useImpact(impactAt, beat.visual.impact ?? "soft");
 
   // 常驻运动：整帧推近 + 漂移 + 入场动量。文案密集的拍可以调 soft，
   // 纯静态信息页（图表、长列表）建议保持 normal——它们最容易被看成 PPT。
@@ -97,9 +103,11 @@ export const BeatVisual: React.FC<{
     ambientStrength,
     cameraMove === "static",
   );
-  const contentTransform = [ambient, beat.visual.impact ? impact.transform : ""]
-    .filter(Boolean)
-    .join(" ");
+
+  // 抠图元素：back 在内容层下面（洞、底图），front 压在内文之上（盖在字前的道具）
+  const cutouts = beat.visual.cutouts ?? [];
+  const backCutouts = cutouts.filter((c) => !c.front);
+  const frontCutouts = cutouts.filter((c) => c.front);
 
   return (
     <AbsoluteFill>
@@ -146,17 +154,42 @@ export const BeatVisual: React.FC<{
         />
       ) : null}
 
-      {/* 内容层：常驻运动打底，impact 拍再叠一记冲击。
-          两层都是 transform，拼成一条声明——分两层 div 会让 scale 重复叠加 */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          transform: contentTransform || undefined,
-        }}
-      >
-        <Component beat={beat} visual={beat.visual} accent={accent} tone={tone} />
-      </div>
+      {/* 抠图元素（后层）：洞、底物。压在文字下面，不抢主信息。 */}
+      {backCutouts.length ? <CutoutLayer beat={beat} items={backCutouts} /> : null}
+
+      {/* 镜头层：beat 内按词级锚点切成多个 <Sequence>。每个镜头自带入场配方
+          和词级冲击；crossfade 让前一镜多挂 8 帧、后一镜前 8 帧淡入，两个
+          Sequence 自然交叠，不进 TransitionSeries（音频时钟是 beat 级的）。 */}
+      {shots.map((s, i) => (
+        <Sequence
+          key={i}
+          from={s.from}
+          durationInFrames={
+            s.durationInFrames + (shots[i + 1]?.transition === "crossfade" ? SHOT_FADE : 0)
+          }
+          name={`${beat.id}/s${i}`}
+        >
+          <ShotLayer
+            shot={s}
+            beat={beat}
+            accent={accent}
+            tone={tone}
+            ambientTransform={ambient}
+            holdExit={i < shots.length - 1}
+            fadeIn={s.transition === "crossfade" ? SHOT_FADE : 0}
+            multiShot={shots.length > 1}
+            fireImpact={i === 0}
+            component={Component}
+          />
+        </Sequence>
+      ))}
+
+      {/* 抠图元素（前层）：压在内文之上，做"盖住/挡在前面"的叙事。 */}
+      {frontCutouts.length ? <CutoutLayer beat={beat} items={frontCutouts} /> : null}
+
+      {/* 红笔批注：画在内容之上、字幕之下。它跟纸一起被镜头带走，
+          所以放在 PaperStage 里面，而不是像报头那样固定在画幅上。 */}
+      {beat.visual.annotations?.length ? <NoteLayer notes={beat.visual.annotations} /> : null}
 
       {/* 漂移柔光只在没有配图时开：它是两块 accent 色斑，压在照片上会变成
           一层品红色滤镜，整张图"脏"掉。照片自己就有明暗层次。 */}
@@ -189,7 +222,7 @@ export const BeatVisual: React.FC<{
         </AbsoluteFill>
       </AbsoluteFill>
 
-      {/* 角标：画幅上的固定 UI，不受运镜影响 */}
+      {/* 报头：画幅上的固定 UI，不受运镜影响。只有片名，没有页码 */}
       <div
         style={{
           position: "absolute",
@@ -198,11 +231,7 @@ export const BeatVisual: React.FC<{
           zIndex: 20,
         }}
       >
-        {index === 0 ? (
-          <TitleMark title={title} accent={accent} />
-        ) : (
-          <BeatLabel index={index} total={total} accent={accent} tone={tone} />
-        )}
+        <RunningHead title={title} accent={accent} tone={tone} />
       </div>
     </AbsoluteFill>
   );

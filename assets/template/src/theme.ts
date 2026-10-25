@@ -1,40 +1,49 @@
 /**
- * VOX 风格的配色。
+ * 配色：复古老报纸 / 档案地图纸（MG-VOXSTAGE）。
  *
- * 浅色纸面 + 高饱和强调色，是这套视觉能读起来"像解说片"的关键：
- * 大片留白让动态文字有地方站，暖橙承担"看这里"的注意力。
+ * 规范来自 assets 里的风格板，只有五支颜色：
+ *   存档米棕 #C9B89C   底纸、纸片（深浅两档拉出层次）
+ *   油墨纯黑 #1A1A1A   标题、正文、地图线
+ *   半调网点灰 #8C8C8C 次要信息、网点
+ *   醒目正红 #D62E1F   描边、下划线、箭头——**只做强调**，不做大面积底色
+ *   芥末黄 #D9A441     次级强调，用量比红少一半
+ *
+ * 所以这里不再有蓝/青/品红这类"扁平 UI 色"。之前每拍轮一个高饱和色，
+ * 五拍之后观众读到的是一套演示模板；现在整片只有红/黄两根记号笔，
+ * 颜色越少，红色落下的地方越像"编辑圈出来的"。
  */
 
 export const COLORS = {
-  // 纸面
-  paper: "#F4F1EA",
-  /** 拼贴的底纸。比 paper 深一档：纸片是亮白，底纸是旧牛皮/米色，
-   *  两者反差太小时整幅会糊成一片米白（实测帧间差直接掉 15%）。 */
-  stage: "#E9E2D2",
-  paperAlt: "#EAE5DA",
-  ink: "#14161A",
-  inkSoft: "#4A5058",
-  inkFaint: "#9AA0A8",
-  rule: "#D5CFC2",
+  // 纸面：底纸比纸片深一档，纸片才是"叠"上去的
+  paper: "#F6EFDD",
+  stage: "#D3C2A4",
+  stageDeep: "#BFA984",
+  paperAlt: "#E7DAC1",
+  ink: "#1A1A1A",
+  inkSoft: "#574B3B",
+  inkFaint: "#8C8C8C",
+  rule: "#B3A084",
 
-  // 强调
-  accent: "#FF5B35",
-  accentSoft: "#FF8A6B",
-  gold: "#F2B705",
-  teal: "#0E9C8A",
-  blue: "#2B6CE8",
-  magenta: "#C8367E",
+  // 强调（只允许这两支）
+  accent: "#D62E1F",
+  accentSoft: "#E4573F",
+  gold: "#D9A441",
+  /** 半调网点灰：需要第三支"强调色"时用它，保持印刷品的中性 */
+  halftone: "#8C8C8C",
 
-  // 深色场景（hook / quote 用）
-  night: "#12141A",
-  nightInk: "#F4F1EA",
+  // 深色场景（只有 quote 用）：暖墨黑，不是冷灰黑
+  night: "#1C1915",
+  nightInk: "#F6EFDD",
 } as const;
 
-/** 强调色轮转：相邻 beat 用不同颜色，避免整片一个色调 */
+/**
+ * 强调色轮转：红为主、芥末黄做间隔、网点灰兜底。
+ * 相邻拍仍然不同色，但整片不会跑出风格板的五色范围。
+ */
 export const ACCENT_CYCLE = [
   COLORS.accent,
-  COLORS.blue,
   COLORS.gold,
-  COLORS.teal,
-  COLORS.magenta,
+  COLORS.accent,
+  COLORS.halftone,
+  COLORS.accent,
 ] as const;

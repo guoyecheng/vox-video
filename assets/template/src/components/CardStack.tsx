@@ -33,6 +33,10 @@ export const CardStack: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
     beat.durationInFrames,
   );
 
+  const layout = visual.layout ?? "center";
+  const isLeft = layout === "left-edge";
+  const isBottom = layout === "bottom-third";
+
   return (
     <div
       style={{
@@ -40,12 +44,12 @@ export const CardStack: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
         inset: 0,
         display: "flex",
         flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
+        justifyContent: isBottom ? "flex-end" : "center",
+        alignItems: isLeft ? "flex-start" : "center",
         gap: 34,
         // 卡片不铺满整个画面：拉满宽度会让内容挤在左侧，右边一大片空白
         width: "100%",
-        padding: `150px ${pad}px 130px`,
+        padding: isBottom ? `150px ${pad}px 190px` : `150px ${pad}px 130px`,
         opacity: presence,
       }}
     >

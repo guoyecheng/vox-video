@@ -71,6 +71,20 @@ def valid_rate(rate: str) -> bool:
     return bool(re.fullmatch(r"[+-]?\d+%?", rate or ""))
 
 
+def stretch_last_beat(out_beats: list[dict], total: int) -> None:
+    """把片尾留白并进最后一拍，让画面铺到片尾。
+
+    不并的话 TransitionSeries 在最后一拍结束时就散了，之后露出的是合成根节点
+    的纯色底——片尾最后半秒变成一块死色。音频走绝对摆放，改视觉时长不会错位。
+    """
+    if not out_beats:
+        return
+    last = out_beats[-1]
+    grow = total - (last["from"] + last["durationInFrames"])
+    if grow > 0:
+        last["durationInFrames"] += grow
+
+
 # ---------------------------------------------------------------- tts core
 
 async def synth_beat(
@@ -330,6 +344,12 @@ def main() -> None:
     tail_pad = int(round(float(script.get("tailPad", 0.6)) * fps))
     # 兜底：视觉被转场压缩，音频不会跟着压缩，所以总长必须听得过音频的
     total = max(visual_total, audio_end) + tail_pad
+
+    # 片尾留白是留给配乐的，画面不能跟着消失：把这段并进最后一拍。
+    # 不并的话 TransitionSeries 在最后一拍结束时就散了，之后露出的是合成根节点
+    # 的纯色底——片尾最后半秒变成一块死色（实测样片就是这样）。
+    # 音频走绝对摆放，改视觉时长不会让它错位。
+    stretch_last_beat(out_beats, total)
 
     timeline = {
         "title": script.get("title", "untitled"),

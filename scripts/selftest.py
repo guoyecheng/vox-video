@@ -30,7 +30,7 @@ import _media  # noqa: E402
 def declared_kinds() -> set[str]:
     txt = (TEMPLATE / "src" / "timeline.ts").read_text(encoding="utf-8")
     decl = txt[txt.find("export type VisualKind"):]
-    return set(re.findall(r'"(\w+)"', decl[:decl.find(";")]))
+    return set(re.findall(r'"([\w-]+)"', decl[:decl.find(";")]))
 
 
 def test_kind_list_matches_declaration() -> str:
@@ -74,6 +74,91 @@ def test_single_soft_transition_is_flagged() -> str:
     problems = _transitions(["fade", "slide", "wipe", "iris"])
     assert not problems
     return "单一检测只对重复项生效"
+
+
+def test_motion_layout_enums_match_declaration() -> str:
+    txt = (TEMPLATE / "src" / "timeline.ts").read_text(encoding="utf-8")
+    for name, reader in (("MotionRecipe", preflight.motions_from_code),
+                         ("LayoutMode", preflight.layouts_from_code)):
+        decl = txt[txt.find(f"export type {name}"):]
+        want = set(re.findall(r'"([\w-]+)"', decl[:decl.find(";")]))
+        got = reader(TEMPLATE) or set()
+        assert got == want, f"{name} 读到 {sorted(got)}，声明是 {sorted(want)}"
+    # 带连字符的值（left-edge 这类）曾经被 \w+ 整条吞掉——两边用同一个 bug
+    # 正则时上面的等式照样成立，这里单独点名锁死。
+    assert {"left-edge", "full-bleed", "bottom-third"} <= (preflight.layouts_from_code(TEMPLATE) or set()), \
+        "LayoutMode 带连字符的值没被读到"
+    return "motion+layout"
+
+
+def test_shot_spec_declared() -> str:
+    txt = (TEMPLATE / "src" / "timeline.ts").read_text(encoding="utf-8")
+    for needle in ("export type ShotTransition", "export type ShotSpec", "shots?: ShotSpec[];"):
+        assert needle in txt, f"timeline.ts 缺 {needle}"
+    decl = txt[txt.find("export type ShotSpec"):]
+    fields = set(re.findall(r"^  (\w+)\??:", decl[:decl.find("};") + 2], re.M))
+    assert {"from", "to", "words", "motion", "layout", "transition"} <= fields, \
+        f"ShotSpec 字段缺了：{sorted({'from', 'to', 'words', 'motion', 'layout', 'transition'} - fields)}"
+    return "ShotSpec 声明齐全"
+
+
+def test_shot_transition_enum_matches_declaration() -> str:
+    got = preflight._enum_from_code(TEMPLATE, "ShotTransition") or set()
+    assert got == {"cut", "crossfade"}, f"ShotTransition 读到 {sorted(got)}"
+    return "cut+crossfade"
+
+
+def _template_order() -> list[str]:
+    txt = (TEMPLATE / "src" / "recipes.ts").read_text(encoding="utf-8")
+    decl = txt[txt.find("export const ORDER"):]
+    start = decl.find("= [") + 3
+    return re.findall(r'"(\w+)"', decl[start:decl.find("]", start) + 1])
+
+
+def test_auto_rotation_never_repeats_adjacent() -> str:
+    """模板与 check_rhythm 的轮换表必须一致，且任意 kind 序列相邻（含 wrap）不重复。"""
+    assert _template_order() == check_rhythm.ORDER, (
+        f"模板 ORDER={_template_order()}，check_rhythm.ORDER={check_rhythm.ORDER}")
+    sequences = (
+        [{"visual": {"kind": "kinetic"}}] * 8,
+        [{"visual": {"kind": "image"}}] * 8,
+        [{"visual": {"kind": k}} for k in ("kinetic", "image") * 4],
+        [{"visual": {"kind": k}} for k in ("image", "stat", "quote", "image") * 2],
+    )
+    for beats in sequences:
+        got = check_rhythm.effective_motion(beats)
+        assert all(a != b for a, b in zip(got, got[1:])), f"相邻重复：{got}"
+    plain = check_rhythm.effective_motion([{"visual": {"kind": "image"}}] * 5)
+    assert "build" not in plain, f"不可 build 的拍拿到了 build：{plain}"
+    return "轮换相邻不同"
+
+
+def test_motion_variety_detects_repeats() -> str:
+    def beats(*motions):
+        return [{"visual": {"kind": "kinetic", "motion": m}} for m in motions]
+    _, problems = check_rhythm.check_motion_variety(beats("stamp", "stamp", "wipe"))
+    assert problems, "相邻同配方应当报警"
+    _, problems = check_rhythm.check_motion_variety(beats("stamp", "wipe", "rise"))
+    assert not problems, "不同配方不该报警"
+    auto = [{"visual": {"kind": k}} for k in ("kinetic", "image", "stat", "quote")]
+    _, problems = check_rhythm.check_motion_variety(auto)
+    assert not problems, f"自动轮换不该报警：{problems}"
+    out, _ = check_rhythm.check_motion_variety([{"visual": {"kind": "kinetic"}}] * 3)
+    assert any("没写 layout" in line for line in out), "连续无 layout 应当提示"
+    return "检测生效"
+
+
+def test_layout_support_matches_components() -> str:
+    """preflight 的 LAYOUT_SUPPORT 矩阵要和组件实现对上，否则"没实现"提醒会误报。"""
+    support = preflight.LAYOUT_SUPPORT
+    assert set(support) <= preflight.KINDS, f"矩阵里有不认识的 kind：{set(support) - preflight.KINDS}"
+    files = {"kinetic": "KineticText", "stat": "StatCard",
+             "quote": "QuoteCard", "cards": "CardStack"}
+    for kind, modes in support.items():
+        assert modes <= preflight.LAYOUT_MODES, f"{kind} 的变体有非法值：{modes - preflight.LAYOUT_MODES}"
+        txt = (TEMPLATE / "src" / "components" / f"{files[kind]}.tsx").read_text(encoding="utf-8")
+        assert 'visual.layout ?? "center"' in txt, f"{files[kind]} 没读 layout"
+    return "支持矩阵与实现一致"
 
 
 def test_rate_default_is_consistent() -> str:
@@ -126,6 +211,59 @@ def test_media_prefers_compositor_build() -> str:
     return "自带版优先"
 
 
+def test_annotations_wired_and_validated() -> str:
+    """annotations：NoteKind → NoteSpec → NoteLayer → visuals 接线 → preflight。"""
+    declared = preflight._enum_from_code(TEMPLATE, "NoteKind") or set()
+    assert declared == preflight.NOTE_KINDS, \
+        f"NoteKind 与 preflight 枚举不一致：{declared ^ preflight.NOTE_KINDS}"
+
+    timeline = (TEMPLATE / "src" / "timeline.ts").read_text(encoding="utf-8")
+    assert "export type NoteSpec" in timeline, "缺 NoteSpec 类型"
+    assert "annotations?: NoteSpec[]" in timeline, "VisualSpec 没声明 annotations"
+
+    comp = TEMPLATE / "src" / "components" / "NoteLayer.tsx"
+    assert comp.exists(), "缺 NoteLayer.tsx"
+    src = comp.read_text(encoding="utf-8")
+    for needle in ("roughEllipse", "roughLine", "strokeDashoffset", "ShapeMark"):
+        assert needle in src, f"NoteLayer 缺 {needle}"
+
+    visuals = (TEMPLATE / "src" / "visuals.tsx").read_text(encoding="utf-8")
+    assert "<NoteLayer notes={beat.visual.annotations}" in visuals, "visuals.tsx 没接 annotations"
+
+    kinds = preflight.kinds_from_code(TEMPLATE) or preflight.KINDS
+    motions = preflight.motions_from_code(TEMPLATE) or preflight.MOTION_RECIPES
+    layouts = preflight.layouts_from_code(TEMPLATE) or preflight.LAYOUT_MODES
+
+    def run(visual: dict):
+        rep = preflight.Report()
+        preflight.check_visual(Path("."), rep, "beat0", visual, "方的井盖会掉进洞里。",
+                               kinds, motions, layouts)
+        return rep
+
+    good = {"kind": "stat", "value": 41, "annotations": [
+        {"kind": "circle", "x": 33, "y": 48, "w": 620, "h": 360, "rot": -4, "at": 1},
+        {"kind": "tag", "x": 72, "y": 30, "text": "对角"},
+    ]}
+    rep = run(good)
+    assert not rep.errors and not [w for w in rep.warns if "批注" in w], \
+        f"合法 annotations 被误报：{rep.errors} {rep.warnings}"
+
+    bad = {"kind": "kinetic", "annotations": [
+        {"kind": "explode", "x": 50, "y": 50},
+        {"kind": "circle", "x": 120, "y": 50, "w": 0},
+        {"kind": "tag", "x": 50, "y": 50},
+    ]}
+    errs = run(bad).errors
+    assert any("kind" in e for e in errs), f"非法 note kind 没报错：{errs}"
+    assert any("画幅百分比" in e for e in errs), f"越界坐标没报错：{errs}"
+    assert any("w" in e for e in errs), f"w=0 没报错：{errs}"
+    assert any("text" in e for e in errs), f"tag 缺 text 没报错：{errs}"
+
+    low = {"kind": "stat", "value": 1, "annotations": [{"kind": "stamp", "x": 50, "y": 90, "text": "结论"}]}
+    assert any("字幕带" in w for w in run(low).warns), "落进字幕带没给警告"
+    return "类型/组件/接线/校验一致"
+
+
 def test_doc_paths_exist() -> str:
     """文档里写到的 references/ 和 scripts/ 路径必须真的存在。"""
     missing = set()
@@ -174,16 +312,365 @@ def test_doc_anchors_resolve() -> str:
     return "跨文档锚点可解析"
 
 
+def test_visuals_wires_shots() -> str:
+    """镜头拆分要在三处接上：visuals 渲染、VoxVideo 全局游标、BeatPresence 的 holdExit。"""
+    visuals = (TEMPLATE / "src" / "visuals.tsx").read_text(encoding="utf-8")
+    for needle in ("shots.map(", "<ShotLayer", "<Sequence",
+                   "multiShot={shots.length > 1}", "fireImpact={i === 0}"):
+        assert needle in visuals, f"visuals.tsx 缺 {needle}"
+    layer = (TEMPLATE / "src" / "ShotLayer.tsx").read_text(encoding="utf-8")
+    assert "multiShot" in layer and "shot.shown === undefined" in layer, \
+        "ShotLayer 没在多镜拍里清掉拍级 text（会被每一镜重复上屏）"
+    assert "fireImpact" in layer, "ShotLayer 没把冲击限制在拍内首镜（预算按拍计）"
+    vox = (TEMPLATE / "src" / "VoxVideo.tsx").read_text(encoding="utf-8")
+    assert "computeShots(" in vox and "cursor" in vox, "VoxVideo.tsx 没接全局镜头游标"
+    assert "shots={shotsByBeat[i]" in vox, "VoxVideo.tsx 没把 shots 传给 BeatVisual"
+    presence = (TEMPLATE / "src" / "components" / "BeatPresence.tsx").read_text(encoding="utf-8")
+    assert "holdExit" in presence, "BeatPresence.tsx 缺 holdExit"
+    assert re.search(r"EntranceContext[\s\S]{0,160}?holdExit: false", presence), \
+        "EntranceContext 默认值缺 holdExit: false"
+    return "三处接线齐全"
+
+
+def test_preflight_validates_shots() -> str:
+    """shots 的结构错误要在体检阶段被挡住，而不是渲染时静默失配。"""
+    motions = preflight.motions_from_code(TEMPLATE) or preflight.MOTION_RECIPES
+    layouts = preflight.layouts_from_code(TEMPLATE) or preflight.LAYOUT_MODES
+    kinds = preflight.kinds_from_code(TEMPLATE) or preflight.KINDS
+
+    def errors_for(visual: dict) -> list[str]:
+        rep = preflight.Report()
+        preflight.check_visual(Path("."), rep, "beat0", visual, "", kinds, motions, layouts)
+        return rep.errors
+
+    got = errors_for({"kind": "image", "src": "img/x.png", "shots": [{"to": 2}]})
+    assert any("只对 kinetic" in e for e in got), f"非 kinetic 写 shots 没报错：{got}"
+
+    assert errors_for({"kind": "kinetic", "shots": [{"to": 2}, {"from": 1}]}), \
+        "重叠的 shots 没报错"
+    assert errors_for({"kind": "kinetic", "shots": [{"from": 3, "to": 2}]}), \
+        "to ≤ from 没报错"
+    assert errors_for({"kind": "kinetic", "shots": [{"transition": "wipe"}]}), \
+        "非法 ShotTransition 没报错"
+
+    got = errors_for({"kind": "kinetic", "shots": [{"to": 2}, {"from": 2, "motion": "rise"}]})
+    assert not got, f"合法 shots 被误报：{got}"
+
+    assert errors_for({"kind": "kinetic", "shots": [{"to": 2}, {"to": 4}]}), \
+        "第 2 镜起没写 from 没报错"
+    assert errors_for({"kind": "kinetic", "shots": [{"from": 2}, {"from": 1}]}), \
+        "from 倒序没报错"
+
+    # 首镜缺 from 是合法的（从 0 开始）
+    assert not errors_for({"kind": "kinetic", "shots": [{"to": 2}, {"from": 2}]}), \
+        "首镜缺 from 被误报"
+    return "shots 结构校验"
+
+
+def test_preflight_shot_fit() -> str:
+    """显式镜的 to 越过实测拍长时要在体检阶段报出来。
+
+    from/to 是秒，拍长是 TTS 之后才有的帧数——没有 timeline.json 就跳过，
+    有就必须查：否则运行时只会把它 clamp 成末尾一帧，静默吞掉整镜。
+    """
+    import json
+
+    tmp = Path(tempfile.mkdtemp(prefix="fit-"))
+    (tmp / "src").mkdir()
+    script = {"title": "t", "beats": [{
+        "id": "a",
+        "narration": "一，二。",
+        "visual": {"kind": "kinetic", "shots": [{"to": 1}, {"from": 1, "to": 9}]},
+    }]}
+    (tmp / "script.json").write_text(json.dumps(script, ensure_ascii=False), encoding="utf-8")
+
+    (tmp / "src" / "timeline.json").write_text(
+        json.dumps({"fps": 30, "beats": [{"id": "a", "durationInFrames": 120}]}),
+        encoding="utf-8",
+    )
+    rep = preflight.Report()
+    preflight.check_script(tmp, rep)
+    assert any("超出" in e for e in rep.errors), f"越拍长没报错：{rep.errors}"
+
+    (tmp / "src" / "timeline.json").write_text(
+        json.dumps({"fps": 30, "beats": [{"id": "a", "durationInFrames": 300}]}),
+        encoding="utf-8",
+    )
+    rep = preflight.Report()
+    preflight.check_script(tmp, rep)
+    assert not rep.errors, f"合法时长被误报：{rep.errors}"
+    return "显式镜越拍长"
+
+
+def test_check_rhythm_shot_adjacency() -> str:
+    """镜头级配方要跨拍检查相邻重复（全局序号），不能只看拍级首镜。"""
+    beats = [
+        {"id": "a", "visual": {"kind": "kinetic", "shots": [{"motion": "stamp"}]}},
+        {"id": "b", "visual": {"kind": "kinetic", "shots": [{"motion": "stamp"}]}},
+    ]
+    _, problems = check_rhythm.check_shot_rhythm(beats)
+    assert problems, "跨拍相邻镜头同配方没报警"
+
+    beats = [
+        {"id": "a", "visual": {"kind": "kinetic", "shots": [{}, {}]}},
+        {"id": "b", "visual": {"kind": "kinetic", "shots": [{}]}},
+    ]
+    _, problems = check_rhythm.check_shot_rhythm(beats)
+    assert not problems, f"默认轮换不该报警：{problems}"
+
+    # 前一拍可能自动拆成多镜（末镜配方未知）→ 这一对接缝算不准，只提示不判失败
+    beats = [
+        {"id": "a", "narration": "甲，乙。", "words": [{"t": 0, "d": 10, "text": "甲"}],
+         "visual": {"kind": "kinetic"}},
+        {"id": "b", "visual": {"kind": "kinetic", "shots": [{"motion": "stamp"}]}},
+    ]
+    _, problems = check_rhythm.check_shot_rhythm(beats)
+    assert not problems, f"自动拆分之后的相邻判定误报失败：{problems}"
+
+    # 拍级相邻检查要跳过带 shots 的拍：首镜≠末镜，真正的接缝由镜头级负责
+    beats = [
+        {"id": "a", "visual": {"kind": "kinetic",
+                               "shots": [{"motion": "stamp"}, {"motion": "rise"}]}},
+        {"id": "b", "visual": {"kind": "kinetic", "motion": "stamp"}},
+    ]
+    _, problems = check_rhythm.check_motion_variety(beats)
+    assert not problems, f"shots 拍的拍级相邻误报：{problems}"
+    return "镜头级相邻检测"
+
+
+def test_node_shot_suite() -> str:
+    """computeShots 的 node 断言套件。esbuild 不可用时警告并跳过（不 FAIL）。"""
+    import subprocess
+
+    tmp = Path(tempfile.mkdtemp(prefix="shots-"))
+    bundle = tmp / "shots.bundle.mjs"
+    entry = TEMPLATE / "src" / "shots.ts"
+    # Windows 下 npx 是 .cmd shim，CreateProcess 直接跑不了，走 shell
+    try:
+        r = subprocess.run(
+            f'npx -y esbuild "{entry}" --bundle --format=esm "--outfile={bundle}"',
+            shell=True, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=180,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"    (esbuild 不可用，跳过 node 子套件：{e})")
+        return "跳过"
+    if r.returncode != 0:
+        print(f"    (esbuild 失败，跳过 node 子套件：{(r.stderr or '').strip()[:120]})")
+        return "跳过"
+    r2 = subprocess.run(
+        ["node", str(SCRIPTS / "shots_check.mjs"), str(bundle)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
+    )
+    if r2.returncode != 0:
+        raise AssertionError(f"node 套件失败：\n{r2.stdout}\n{r2.stderr}")
+    return r2.stdout.strip().splitlines()[-1]
+
+
+def test_word_alignment_suite() -> str:
+    """resolveWordTimings 的 node 套件：上屏词与词流两侧都要剥标点。"""
+    import subprocess
+
+    tmp = Path(tempfile.mkdtemp(prefix="words-"))
+    bundle = tmp / "words.bundle.mjs"
+    entry = TEMPLATE / "src" / "words.ts"
+    try:
+        r = subprocess.run(
+            f'npx -y esbuild "{entry}" --bundle --format=esm "--outfile={bundle}"',
+            shell=True, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=180,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"    (esbuild 不可用，跳过 node 子套件：{e})")
+        return "跳过"
+    if r.returncode != 0:
+        print(f"    (esbuild 失败，跳过 node 子套件：{(r.stderr or '').strip()[:120]})")
+        return "跳过"
+    r2 = subprocess.run(
+        ["node", str(SCRIPTS / "words_check.mjs"), str(bundle)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
+    )
+    if r2.returncode != 0:
+        raise AssertionError(f"node 套件失败：\n{r2.stdout}\n{r2.stderr}")
+    return r2.stdout.strip().splitlines()[-1]
+
+
+def test_paper_tiles_wired() -> str:
+    """强调词贴纸片：切分是纯函数，两个文本组件都接上了，且每拍限量。"""
+    words = (TEMPLATE / "src" / "words.ts").read_text(encoding="utf-8")
+    assert "export const splitByEmphasis" in words, "words.ts 缺 splitByEmphasis"
+
+    tile = (TEMPLATE / "src" / "components" / "PaperTile.tsx").read_text(encoding="utf-8")
+    for needle in ("roughEdge", "drop-shadow", "spring", "Tape", "BrushUnderline"):
+        assert needle in tile, f"PaperTile 缺 {needle}"
+
+    assert "export const autoTileVariant" in tile, "PaperTile 缺 autoTileVariant"
+    for variant in ("cut", "note", "clip", "label", "banner", "red"):
+        assert f"\n  {variant}: {{" in tile, f"PaperTile 缺版式 {variant}"
+    assert "COLORS.gold" in tile, "label 版式没用金色——短词就跳不出来"
+    assert "chars >= 6" in tile, "长文本应自动走 banner"
+    assert "order" in tile, "同一拍第二张纸片要能换版"
+
+    for name in ("KineticText", "QuoteCard"):
+        src = (TEMPLATE / "src" / "components" / f"{name}.tsx").read_text(encoding="utf-8")
+        assert 'from "./PaperTile"' in src, f"{name} 没接 PaperTile"
+        assert "splitByEmphasis" in src, f"{name} 没切分强调短语"
+        assert "slice(0, 2)" in src, f"{name} 没有每拍 2 张的上限"
+        assert "order={" in src, f"{name} 没把纸片序号传给 PaperTile"
+
+    docs = (ROOT / "references" / "components.md").read_text(encoding="utf-8")
+    assert "纸片字" in docs, "components.md 没写纸片字规则"
+    for variant in ("label", "banner", "red"):
+        assert f"`{variant}`" in docs, f"components.md 没写 {variant} 版式"
+
+    preflight = (ROOT / "scripts" / "preflight.py").read_text(encoding="utf-8")
+    line = next((l for l in preflight.splitlines() if l.startswith("TILE_VARIANTS")), "")
+    for variant in ("cut", "note", "clip", "label", "banner", "red", "auto"):
+        assert f'"{variant}"' in line, f"preflight 的 TILE_VARIANTS 缺 {variant}"
+    return "纯切分 + 每拍限量 + 六种版式"
+
+
+def test_word_helpers_are_pure_module() -> str:
+    """对齐逻辑必须住在无 React 依赖的 words.ts 里，否则 node 套件测不到。"""
+    words = (TEMPLATE / "src" / "words.ts").read_text(encoding="utf-8")
+    assert "export const resolveWordTimings" in words, "words.ts 缺 resolveWordTimings"
+    assert "export const makeEmphasisMatcher" in words, "words.ts 缺 makeEmphasisMatcher"
+    for banned in ("from \"remotion\"", "from \"react\"", "from \"./components"):
+        assert banned not in words, f"words.ts 不能依赖 {banned}"
+
+    presence = (TEMPLATE / "src" / "components" / "BeatPresence.tsx").read_text(encoding="utf-8")
+    assert 'from "../words"' in presence, "BeatPresence 没从 words.ts 取对齐函数"
+    return "纯模块 + 单向依赖"
+
+
+def test_tail_never_shows_bare_stage() -> str:
+    """片尾留白必须并进最后一拍：否则 TransitionSeries 散场后露出纯色根底。"""
+    import vox_tts
+
+    beats = [{"from": 0, "durationInFrames": 100}, {"from": 100, "durationInFrames": 50}]
+    vox_tts.stretch_last_beat(beats, 168)
+    assert beats[-1]["durationInFrames"] == 68, "最后一拍没吸收片尾留白"
+    assert beats[0]["durationInFrames"] == 100, "前面的拍不能被改"
+
+    same = [{"from": 0, "durationInFrames": 70}]
+    vox_tts.stretch_last_beat(same, 70)
+    assert same[0]["durationInFrames"] == 70, "总长已对齐时不应改动"
+    vox_tts.stretch_last_beat([], 10)  # 空片不炸
+    return "最后一拍吸收 tailPad"
+
+
+def test_cutout_keying_keeps_enclosed_colors() -> str:
+    """抠底只删与画布边缘连通的底色；被图形包住的近似色（纸片内芯）必须留住。"""
+    try:
+        import cutout  # noqa: PLC0415
+    except ImportError as e:
+        return f"跳过（{e}）"
+
+    from PIL import Image, ImageDraw  # noqa: PLC0415
+
+    im = Image.new("RGB", (400, 300), (244, 241, 234))
+    d = ImageDraw.Draw(im)
+    d.ellipse([110, 60, 290, 240], fill=(45, 48, 56))
+    # 内芯颜色接近底色，但被深灰环整个包住——按连通行抠底时不能删
+    d.ellipse([145, 95, 255, 205], fill=(238, 234, 222))
+
+    rgba, meta = cutout.key_out(im)
+    assert rgba.mode == "RGBA"
+    center = (rgba.width // 2, rgba.height // 2)
+    assert rgba.getpixel((0, 0))[3] == 0, "画布角落的底色应被抠掉"
+    assert rgba.getpixel(center)[3] == 255, "被深色环包住的浅色内芯不能被误抠"
+    assert meta["bbox"] is not None
+    assert rgba.size[0] < 400 and rgba.size[1] < 300, "应按内容裁边"
+    return "flood fill + 裁边"
+
+
+def test_cutouts_wired_and_validated() -> str:
+    """cutouts：类型 → 组件 → visuals 接线 → preflight 校验，四处都要对上。"""
+    declared = preflight._enum_from_code(TEMPLATE, "CutoutEnter") or set()
+    assert declared == preflight.CUTOUT_ENTERS, \
+        f"CutoutEnter 与 preflight 枚举不一致：{declared ^ preflight.CUTOUT_ENTERS}"
+
+    timeline = (TEMPLATE / "src" / "timeline.ts").read_text(encoding="utf-8")
+    assert "cutouts?: CutoutSpec[]" in timeline, "VisualSpec 没声明 cutouts"
+    assert "export type CutoutSpec" in timeline, "缺 CutoutSpec 类型"
+
+    comp = TEMPLATE / "src" / "components" / "CutoutLayer.tsx"
+    assert comp.exists(), "缺 CutoutLayer.tsx"
+    src = comp.read_text(encoding="utf-8")
+    for needle in ("resolveWordTimings", "drop-shadow", "fallAtom", "translate(-50%, -50%)"):
+        if needle == "fallAtom":
+            assert "spec.fall" in src, "CutoutLayer 没处理坠落锚词"
+        else:
+            assert needle in src, f"CutoutLayer 缺 {needle}"
+
+    visuals = (TEMPLATE / "src" / "visuals.tsx").read_text(encoding="utf-8")
+    for needle in ("backCutouts", "frontCutouts", "<CutoutLayer"):
+        assert needle in visuals, f"visuals.tsx 缺 {needle}"
+
+    kinds = preflight.kinds_from_code(TEMPLATE) or preflight.KINDS
+    motions = preflight.motions_from_code(TEMPLATE) or preflight.MOTION_RECIPES
+    layouts = preflight.layouts_from_code(TEMPLATE) or preflight.LAYOUT_MODES
+
+    def run(visual: dict, narration: str = "方的井盖，会掉进自己的洞里。"):
+        rep = preflight.Report()
+        preflight.check_visual(Path("."), rep, "beat0", visual, narration,
+                               kinds, motions, layouts)
+        return rep
+
+    good = {"kind": "kinetic", "cutouts": [{
+        "src": "https://example.invalid/hole-cut.png",
+        "x": 0.5, "y": 0.42, "w": 0.36, "enter": "drop",
+        "at": "掉进", "fall": "洞里", "depth": 0.4,
+    }]}
+    rep = run(good)
+    assert not rep.errors and not [w for w in rep.warns if "cutout" in w], \
+        f"合法 cutouts 被误报：{rep.errors} {rep.warnings}"
+
+    bad = {"kind": "kinetic", "cutouts": [
+        {"src": "https://example.invalid/x-cut.png", "x": 1.4, "y": 0.5, "enter": "explode"},
+        {"src": "https://example.invalid/y-cut.png", "x": 0.5, "y": 0.5, "w": 0},
+    ]}
+    errs = run(bad).errors
+    assert any("中心点" in e for e in errs), f"越界坐标没报错：{errs}"
+    assert any("enter" in e for e in errs), f"非法 enter 没报错：{errs}"
+    assert any("w" in e for e in errs), f"w=0 没报错：{errs}"
+
+    lost = {"kind": "kinetic", "cutouts": [{
+        "src": "https://example.invalid/z-cut.png",
+        "x": 0.5, "y": 0.5, "w": 0.3, "at": "旁白里没有的词",
+    }]}
+    assert any("找不到" in w for w in run(lost).warns), "锚词脱拍没给警告"
+    return "类型/组件/接线/校验一致"
+
+
 TESTS = [
     test_kind_list_matches_declaration,
     test_kind_list_rejects_schema_enums,
     test_consecutive_hard_cuts_are_fine,
     test_repeated_soft_transition_is_flagged,
     test_single_soft_transition_is_flagged,
+    test_motion_layout_enums_match_declaration,
+    test_shot_spec_declared,
+    test_shot_transition_enum_matches_declaration,
+    test_visuals_wires_shots,
+    test_preflight_validates_shots,
+    test_preflight_shot_fit,
+    test_check_rhythm_shot_adjacency,
+    test_auto_rotation_never_repeats_adjacent,
+    test_motion_variety_detects_repeats,
+    test_layout_support_matches_components,
     test_rate_default_is_consistent,
     test_sync_report_field_names,
     test_every_script_guards_stderr,
     test_media_prefers_compositor_build,
+    test_node_shot_suite,
+    test_word_alignment_suite,
+    test_word_helpers_are_pure_module,
+    test_paper_tiles_wired,
+    test_tail_never_shows_bare_stage,
+    test_cutout_keying_keeps_enclosed_colors,
+    test_cutouts_wired_and_validated,
+    test_annotations_wired_and_validated,
     test_doc_paths_exist,
     test_doc_anchors_resolve,
 ]

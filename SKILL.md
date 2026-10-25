@@ -106,6 +106,7 @@ HTML 联络表（`out/stills/sheet.html`，浏览器直接开，每格下面标�
 - [五个阶段](#五个阶段) — 完整流程
 - [第 2 步：写稿 + 分镜](#2-写稿--分镜--scriptjson) — 你唯一要手写的文件
 - [分镜节奏](#分镜节奏vox-的命门) — 多长一个 beat、什么时候换画面（弧库见 `references/arcs.md`）
+- [风格基线](#风格基线) — 只有五支颜色、三层纸、三种手势，**开工前先读**
 - [选视觉组件](#选视觉组件) — 15 个组件覆盖 90% 场景
 - [素材图（ComfyUI）](#素材图comfyui) — 可选，自动出配图；风格预设 + bake-off 选风格
 - [转场与特效](#转场与特效) — 别让整片一个节奏（运镜层 / 程序化特效）
@@ -116,6 +117,23 @@ HTML 联络表（`out/stills/sheet.html`，浏览器直接开，每格下面标�
 - 参考文件
 
 ---
+
+## 风格基线
+
+整片只有一套视觉语言：**档案纸拼贴**（MG-VOXSTAGE）。风格板在
+`assets/mg-voxstage-style-board.png`，实现说明在 **`references/style.md`**。
+
+先记住四件事，细节再看文档：
+
+1. **五支颜色**：存档米棕 `#D3C2A4` / 纸片米白 `#F8F1E0` / 油墨黑 `#1A1A1A` /
+   网点灰 `#8C8C8C` / 正红 `#D62E1F`（+ 芥末黄 `#D9A441` 做次级）。没有蓝/青/品红。
+2. **没有纯色背景**：底纸 = 做旧色层 + 旧地图纹 + 半调网点/纤维，缺一层就会"死"。
+3. **红只做记号**：下划线、描边、色条、偏移剪影。红不铺面，强调词是**墨色字 + 红笔划线**，
+   不是彩色字。
+4. **没有页码、没有圆角卡片、没有彩色描边按钮**——出现任意一个，整片就退回 PPT。
+
+改风格不是改某一拍，是改 `src/theme.ts` + `PaperStage` + `paper.tsx` 这三处；
+改完先渲 3-4 张代表帧给用户看，**风格定下来再往下做分镜**。
 
 ## 五个阶段
 
@@ -154,14 +172,48 @@ npm run preflight          # 等价于 python "<skill>/scripts/preflight.py" --p
 组件决定 beat 的**长相**——两件事分开想。14 条弧、拍数数字表、hook 句式库、
 反单调清单见 **`references/arcs.md`**。
 
-**每一拍还要定两根轴**（写进 `script.json`）：
+**每一拍还要定三根杆**（写进 `script.json`）：
 
-| 轴 | 字段 | 管什么 |
+| 杆 | 字段 | 管什么 |
 |---|---|---|
 | 轴一 | `visual.camera` | 整幅怎么动：`push_in`/`pull_out`/`pan`/`tilt`/`parallax`/`whip`/`static` |
-| 轴二 | `visual.elementMotion` | 画面里什么在动（写给实现看，也是反单调的检查项） |
+| 轴二 | `visual.motion` | 内容怎么进场：`stamp`（盖章）/`wipe`（揭开）/`rise`（升起）/`flip`（翻页）/`build`（逐项搭）/`drift`（漂入）。**不写会按拍序自动轮换**（相邻拍保证不同），写错了手写值 |
+| 摆法 | `visual.layout` | 版式变体：`center`（默认）/`left-edge`/`bottom-third`/`split`（仅 stat）/`full-bleed`（需要 `image`）。不写一律是居中卡片 |
 
-只做轴一，画面还是死的；只做轴二，镜头是死的。**相邻两拍的 `camera` 不要重复**。
+只做轴一，画面还是死的；只做轴二，镜头是死的。**相邻两拍的 `camera` 不要重复。**
+`motion` 别连写同一个——自动轮换不会重复，`check_rhythm` 报"相邻重复"一定是手写写重了。
+挑几拍写 `layout`（尤其 stat 的 `split`、长文的 `left-edge`），整片都是居中卡片就是 PPT。
+`elementMotion` 已降级为自由备注，不再影响渲染。
+
+### 镜头拆分（`visual.shots`）
+
+一拍 6 秒只演一个视觉，画面就"定"住了。`kinetic` 拍的旁白有多个从句时，可以在
+拍内再切成 2–3 个镜头，每个镜头自己入场、自己对齐词级时间戳：
+
+```json
+"visual": {
+  "kind": "kinetic",
+  "shots": [
+    { "to": 2.8, "words": ["你自己的设备", "也在排队"], "motion": "stamp" },
+    { "from": 2.8, "words": ["每多连一台", "能分到的就少一分"], "motion": "rise",
+      "transition": "crossfade" }
+  ]
+}
+```
+
+- `from`/`to` 的单位是**秒**（相对拍开头）；省略 `from` = 接上一镜结尾，省略 `to` = 下一镜开头（末镜到拍尾）。第 2 镜起要写 `from`，且不能倒序。
+- **不写 `shots` 的 `kinetic` 长拍会自动按从句拆**：旁白里的句读（`，。！？；、`）落在
+  哪个词之后，下一个词就是新镜头的起点。edge-tts 的词文本**不带标点**，所以 `shots.ts`
+  会把 `narration`（去空白和标点）和词流做字符级对齐再定位句读。短于 1.5 秒的句子
+  并入相邻句（末句并进前一句），合并后只剩一句就是单镜头。想精确控制边界和上屏词就写显式 `shots`。
+- **只对 `kinetic` 生效**——其它 kind 的词级锚点是另一套机制，`preflight` 会挡。
+- 写了 `shots` 之后，拍级 `visual.words` 和 `visual.motion` **失效**：上屏词改由每个镜头的
+  `words` 接管，入场配方按**全局镜头序号**轮换（跨拍相邻也不重复）。**自动拆分同样不认
+  拍级 `motion`**——要指定配方就写显式 `shots`。拍级 `visual.text` 在多镜拍里也不上屏，
+  避免每一镜都重复整句。
+- `camera` 仍是 **beat 级**：镜头切的是内容层，纸台和运镜不动。
+- `impact` / `flash` 是**拍级**：拆镜后 `impact` 只在首镜开火，`check_rhythm` 的冲击预算仍按拍计。
+- 镜头之间默认硬切；`"transition": "crossfade"` 让前镜多挂 8 帧、后镜淡入交叠。
 
 最小形态：
 
@@ -188,7 +240,9 @@ npm run preflight          # 等价于 python "<skill>/scripts/preflight.py" --p
         "value": 47,
         "unit": "年",
         "label": "飞行时间",
-        "source": "NASA/JPL"
+        "source": "NASA/JPL",
+        "motion": "rise",
+        "layout": "split"
       }
     }
   ]
@@ -277,7 +331,7 @@ python "<skill>/scripts/vox_tts.py" --project "<项目路径>"
 
 第 3 步最容易漏：`VisualKind` 和 `VisualSpec` 是**封闭联合类型**，不是开放结构。只往 `REGISTRY` 里塞一个新组件、却没扩 `VisualSpec`，编译就过不去。
 
-组件签名统一是 `({beat, visual, accent, tone})`。`beat` 里带着词级时间戳，用 `resolveWordTimings` / `useBeatWords` 就能让动画卡在旁白上——**别自己按固定帧数排动画**，那样这一拍就和声音脱节了。写之前先翻 `references/components.md` 确认现有组件真的做不到，也别忘了遵守那里的布局分区（左上角标 / 左下出处 / 底边进度条）。
+组件签名统一是 `({beat, visual, accent, tone})`。`beat` 里带着词级时间戳，用 `resolveWordTimings` / `useBeatWords` 就能让动画卡在旁白上——**别自己按固定帧数排动画**，那样这一拍就和声音脱节了。写之前先翻 `references/components.md` 确认现有组件真的做不到，也别忘了遵守那里的布局分区（左上报头 / 左下出处 / 底边进度条）。
 
 组件只读 `useCurrentFrame()`，**不要用 CSS transition / animation / @keyframes**——渲染是逐帧截图的，浏览器没有时间推进，CSS 动画不会动。
 
@@ -311,6 +365,7 @@ VOX 视频看着"信息密度高"，本质是**剪辑节奏快**。60 秒的片�
 几条实操经验：
 
 - **`padAfter` 默认 0.35 秒**。VOX 的画面是在旁白说完后**停半拍**才切的，这半拍是节奏感的来源。太短会显得慌乱，太长会拖。
+- **片尾留白（`tailPad`，默认 0.6 秒）并进最后一拍**。这段是给配乐收尾的，画面会一直铺到最后一帧——别再手工往末尾加空拍，加出来的那几帧会露出纯色底。
 - **一个 beat 只配一个视觉。** 想在一个 beat 里既出大字又出数字卡片，就拆成两个 beat——反正长度是量出来的，拆开不花钱。
 - **`rate` 默认 `+12%`**。中文 TTS 默认语速对解说视频偏慢，加 10-15% 才有 VOX 那种紧凑感。超过 `+20%` 中文会开始吞字。
 - **无声 beat 是合法的**（`narration: ""`）。纯视觉留白（比如放一张图配环境音）节奏上很有用。
@@ -322,9 +377,9 @@ VOX 视频看着"信息密度高"，本质是**剪辑节奏快**。60 秒的片�
 |---|---|---|
 | `KineticText` | `kinetic` | 大字逐词弹出。默认首选，但**一整片别超过 4 拍连续用** |
 | `StatCard` | `stat` | 巨大数字 + 计数动画 + 单位 + 出处 |
-| `Odometer` | `odometer` | 机械逐位计数。数字本身在**跳**的时候比平滑计数更有张力 |
+| `Odometer` | `odometer` | 机械逐位计数，印在墨色纸块上。数字本身在**跳**时比平滑计数更有张力 |
 | `Chart` | `chart` | 柱状 / 折线 / 环形。多组数据的量级对比 |
-| `Highlight` | `highlight` | 荧光笔划线 + 手绘圈注。在**文字**上标重点（`Callout` 是在图片上） |
+| `Highlight` | `highlight` | 红马克笔条 + 红笔划线 + 手绘圈注。在**文字**上标重点（`Callout` 是在图片上） |
 | `Split` | `split` | 2–4 格并排。同层级的并列信息，每格一个短标题 |
 | `Stack` | `stack` | 累积墙。逐项叠加增长的量（逐年、逐级） |
 | `Person` | `person` | 人物：肖像 + 姓名 + 身份年代 + 关键台词 |
@@ -352,8 +407,15 @@ VOX 视频看着"信息密度高"，本质是**剪辑节奏快**。60 秒的片�
 
 有配图的拍会自动关掉 `AmbientLight`——那两块 accent 色斑压在照片上就是一层品红滤镜。
 
-> `image` 生效需要重跑 `npm run tts`：Remotion 读的是生成物 `src/timeline.json`，
-> 不是 `script.json`。改完脚本没重新生成，会看到画面毫无变化。
+**批注层同样全 `kind` 通用**：`visual.annotations` 往纸上画红笔记号——
+`circle` 圈数字、`arrow` 指方向、`measure` 量宽度、`tag` 贴小纸签、
+`stamp` 压橡皮章、`shape` 放一个剪出来的形状（勒洛三角等）。
+坐标是画幅百分比，到点后 12-14 帧"画"进去。版面空得不像话时用它，
+**不要当装饰撒满每一拍**；信息已经满的 compare / cards 不加。
+字段说明见 `references/components.md` 的「红笔批注层」。
+
+> `image` / `annotations` 生效需要重跑 `npm run tts`：Remotion 读的是生成物
+> `src/timeline.json`，不是 `script.json`。改完脚本没重新生成，会看到画面毫无变化。
 
 完整 props、字段和可调参数见 `references/components.md`。
 
@@ -366,6 +428,11 @@ VOX 视频看着"信息密度高"，本质是**剪辑节奏快**。60 秒的片�
 整套视觉是**定格纸艺拼贴**：底纸是旧牛皮色的桌面，内容是剪下来、贴上去的纸片。
 这不是"加个纹理"，它决定三件事——纸片要有边、要有影、要歪；镜头缓慢推近，
 纸张在空气里极慢地漂，尘埃在镜头前上浮。
+
+强调词是这套语言里最典型的物件：从旁白里剪下来贴成纸片——短词是金色小价签，
+3-5 字是便签或剪报，整句是带红边的长条，全片只留一张红纸给最重的那句。
+按字数自动选，同一拍的第二张会换一种；版式表见
+`references/components.md#kinetictext`。
 
 **四条不能破的约束**（每条都对应一次实测翻车）：
 
@@ -512,8 +579,10 @@ python scripts/bakeoff.py --project . --beat shot-hook   # → out/bakeoff/sheet
 
 ### 运镜层（`camera`）—— 轴一
 
-`camera` 管**整幅怎么动**，`elementMotion` 管**画面里什么在动**。两根轴分开想：
-只做运镜画面还是死的，只做元素运动镜头是死的。
+`camera` 管**整幅怎么动**；轴二是 `motion`（**内容怎么进场**，不写自动轮换），
+杆三是 `layout`（**摆在哪**，不写一律居中）。三根杆分开想：
+只做运镜画面还是死的，只做元素运动镜头是死的，每页居中像 PPT。
+配方表和版式表见 `references/arcs.md#三根杆镜头怎么动-内容怎么进场-摆在哪`。
 
 | 值 | 效果 | 什么时候用 |
 |---|---|---|
@@ -528,7 +597,7 @@ python scripts/bakeoff.py --project . --beat shot-hook   # → out/bakeoff/sheet
 hook 句式见 `references/arcs.md`。
 
 > 推近有 **4% 硬上限**（满宽排版超了切字）；平移必须靠放大留出血（1.06-1.2×），
-> 否则露黑边；角标和进度条不参与运镜。幅度与实现见 `references/components.md#运镜层camera`。
+> 否则露黑边；报头和进度条不参与运镜。幅度与实现见 `references/components.md#运镜层camera`。
 
 ### 元素级动效：碎片拼贴（`pieceBase` + `pieces`）
 
@@ -642,6 +711,8 @@ npx remotion render VoxVideo out/cover.png --frame=45   # 抽一帧做封面
 | **画面越往后越早、片尾一段空白** | `from` 按音频时钟累加，而视觉被转场逐拍压缩。必须是 `cursor += dur - next_te`。`verify_sync` 查不出来，只能抽尾帧看 |
 | **加了 `image` 但画面没变** | Remotion 读的是 `src/timeline.json`（生成物）。改 `script.json` 后要重跑 `npm run tts` |
 | **像 PPT：旁白还在说，画面已定格** | 多数是**构图太空**：主体只占中间一小块，四周纯色把帧均差摊平。先让主体铺满（改布局），其次才补元素级动作；`visual.ambient` 只能救"完全不动"。用 `check_motion.py` 的逐拍均差定位，<1.5 算死拍 |
+| **长拍还是像 PPT** | 拍 ≥4s 的 `kinetic` 没写 `shots`，而旁白有多个从句——写 `shots` 按句切镜；不写也会自动按从句拆，但词尾没有标点就拆不开 |
+| **镜头切到一半字没了** | 显式 `shots` 的 `to` 落在词中间。`to` 取旁白从句边界的时刻，让一镜说完一整句 |
 | **画面一直在抖 / 整片像在颤** | 整幅用了 `jitter()`（每 2-3 帧重摆）。换 `sway()`：连续低频正弦，6px / 240 帧；`jitter` 只留给个别小标签 |
 | **画面整块发米白、纸片没边界** | 底纸和纸片都接近白。底纸用 `COLORS.stage`（比 `PAPER.sheet` 深一档），纸片 `PAPER.sheet` |
 | **文字横向叠成三四个残影** | `mix-blend-mode` + 祖先 `transform` 触发 Chromium 合成层缓存 bug。去掉混合模式，改普通 alpha |
@@ -650,8 +721,9 @@ npx remotion render VoxVideo out/cover.png --frame=45   # 抽一帧做封面
 
 ## 参考文件
 
-- `references/components.md` — 15 个组件的完整 props、转场选型、特效层、运镜层、配乐床
-- `references/arcs.md` — 叙事弧库、拍数数字表、hook 句式库、两根轴的词表、反单调清单
+- `references/style.md` — 风格基线：五色表、三层纸舞台、组件语法、字号字距、动效表、禁用清单
+- `references/components.md` — 15 个组件的完整 props、转场选型、特效层、运镜层、入场配方、版式变体与镜头拆分、配乐床
+- `references/arcs.md` — 叙事弧库、拍数数字表、hook 句式库、三根杆的词表、反单调清单
 - `references/comfyui.md` — ComfyUI 出图：模型清单、工作流格式、XPU 已知问题
 - `references/tuning.md` — 实测参数与调优记录：死拍阈值、推近上限、分层收益、同步精度
 - `references/troubleshooting.md` — 渲染报错、字体、音画不同步的完整排查
@@ -659,7 +731,7 @@ npx remotion render VoxVideo out/cover.png --frame=45   # 抽一帧做封面
 - `assets/images.example.json` — `images.json` 示例（即梦/ComfyUI 配图清单）
 - `assets/comfy/` — 工作流 JSON 与模型文件名清单
 - `assets/template/` — 模板工程本体（scaffold 复制的就是它，组件源码的唯一真相）
-- `evals/evals.json` — 回归用例：功能、纸艺风格、防整幅抖动、分层景深、闸门行为、模板同步、叙事弧与运镜、bake-off 选风格、回灌方向
+- `evals/evals.json` — 回归用例：功能、纸艺风格、防整幅抖动、分层景深、闸门行为、模板同步、叙事弧与运镜、bake-off 选风格、回灌方向、镜头拆分
 
 ## 组件代码住在哪
 

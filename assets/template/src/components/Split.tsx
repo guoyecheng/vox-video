@@ -53,7 +53,7 @@ export const Split: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }>
   // 带图的可以高一点（画面本身占空间），纯文字的压矮。
   const cellH = Math.min(hasImage ? 560 : 420, (height - 400 - gap * (rows - 1)) / rows);
 
-  const palette = [accent, COLORS.blue, COLORS.gold, COLORS.teal, COLORS.magenta];
+  const palette = [accent, COLORS.ink, COLORS.gold, COLORS.halftone, COLORS.stageDeep];
 
   return (
     <div

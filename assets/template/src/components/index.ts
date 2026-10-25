@@ -1,11 +1,14 @@
-export { BeatLabel, PaperStage } from "./PaperStage";
+export { PaperStage } from "./PaperStage";
 export {
+  EntranceContext,
   makeEmphasisMatcher,
   resolveWordTimings,
   useBeatPresence,
   useBeatWords,
+  useEntrance,
   useStage,
 } from "./BeatPresence";
+export { autoMotion, canBuildVisual } from "../recipes";
 export { KineticText } from "./KineticText";
 export { StatCard } from "./StatCard";
 export { Odometer } from "./Odometer";
@@ -23,4 +26,6 @@ export { Callout } from "./Callout";
 export { Chart } from "./Chart";
 export { CaptionTrack } from "./CaptionTrack";
 export { PieceLayer } from "./Pieces";
-export { ChapterProgress, TitleMark } from "./Chrome";
+export { CutoutLayer } from "./CutoutLayer";
+export { NoteLayer } from "./NoteLayer";
+export { ChapterProgress, RunningHead } from "./Chrome";

@@ -200,8 +200,13 @@ export const CaptionTrack: React.FC<{
           padding: "16px 40px",
           // 字幕不再是深色圆角块（那是全片最像 PPT 的一处）：
           // 一张浅色纸贴在画面底部，字用墨色，和拼贴的语言一致
-          background: PAPER.sheet,
-          clipPath: roughEdge(5, 2.2, 9),
+          backgroundColor: PAPER.sheet,
+          // 字幕条也是一张撕下来的纸：网点 + 更明显的毛边。
+          // 纯白圆角块是全片最像 UI 的地方，毛边一给就跟底纸接上了。
+          backgroundImage: `radial-gradient(rgba(58,46,28,0.26) 0.8px, transparent 0.95px)`,
+          backgroundSize: "6px 6px",
+          backgroundPosition: "1px 2px",
+          clipPath: roughEdge(5, 4.2, 8),
           boxShadow: "0 2px 0 rgba(52,39,22,0.16), 0 14px 26px rgba(46,34,18,0.26)",
           fontFamily: FONT_BODY,
           // 1080p 字幕下限是有效字高 ≥56px。中文低于这个数在手机小窗里会糊

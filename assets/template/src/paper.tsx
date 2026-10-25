@@ -23,14 +23,15 @@ import React from "react";
 export const STAGE_INFLATE = 14;
 
 export const PAPER = {
-  /** 纸片：比底纸亮一档，纸才是"叠"上去的 */
-  sheet: "#FFFDF6",
-  sheetWarm: "#F7EFDF",
+  /** 纸片：比底纸亮一档，纸才是"叠"上去的。
+   *  不用纯白——纯白在米棕底纸上会读成"屏幕上的白色面板"，是 PPT 感的来源之一。 */
+  sheet: "#F8F1E0",
+  sheetWarm: "#F0E5CE",
   /** 纸的侧边：模拟一层厚度的暗线 */
-  edge: "rgba(52,39,22,0.20)",
+  edge: "rgba(52,39,22,0.22)",
   /** 投影：偏暖，不能用纯黑，纯黑会显脏 */
-  shade: "rgba(46,34,18,0.30)",
-  tape: "rgba(232,201,132,0.66)",
+  shade: "rgba(46,34,18,0.32)",
+  tape: "rgba(219,186,124,0.70)",
   tapeEdge: "rgba(186,150,80,0.45)",
 } as const;
 
@@ -171,6 +172,18 @@ export const PaperSheet: React.FC<{
             : undefined,
         }}
       />
+      {/* 纸片自己也有印刷纹理。纯色纸压在带纹理的底纸上，读起来是
+          "屏幕里的一张白卡片"——网点只加 3% 的脏，却把两层的材质接上了。 */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: radius,
+          clipPath: rough > 0 ? roughEdge(seed, rough) : undefined,
+          ...sheetTexture,
+        }}
+      />
       <div style={{ position: "relative", ...contentStyle }}>{children}</div>
     </div>
   );
@@ -208,6 +221,89 @@ export const Tape: React.FC<{
     />
   </div>
 );
+
+/**
+ * 纸片上的半调网点。极淡，只负责把"纯色块"变成"印出来的纸"。
+ * 加在 `filter`/`clipPath` 之外的面层上，投影仍然只跟背景块走。
+ */
+export const sheetTexture: React.CSSProperties = {
+  backgroundImage: `radial-gradient(rgba(58,46,28,0.26) 0.8px, transparent 0.95px)`,
+  backgroundSize: "6px 6px",
+  backgroundPosition: "1px 2px",
+  opacity: 0.13,
+  pointerEvents: "none",
+};
+
+/**
+ * 红笔划线。风格板里"标题下划线"是整片最便宜也最有效的强调：
+ * 手画的线不可能完全水平，所以用三条粗细不同、微微起伏的路径叠出来，
+ * 出场时按裁剪区从左往右"划"过去，跟旁白落在同一个词上。
+ *
+ * 揭示用 `clipPath` 而不是 `stroke-dashoffset`：线宽用了
+ * `vectorEffect="non-scaling-stroke"`，此时 `pathLength` 归一化会失效，
+ * dash 长度按 viewBox 单位算（1 ≈ 19px），一条线会被拆成一串碎段（实测）。
+ */
+export const BrushUnderline: React.FC<{
+  /** 0-1 的绘制进度 */
+  p: number;
+  color?: string;
+  seed?: number;
+  /** 线宽（px，non-scaling-stroke 保证在任何宽度下都一致） */
+  thickness?: number;
+  style?: React.CSSProperties;
+}> = ({ p, color = "#D62E1F", seed = 1, thickness = 7, style }) => {
+  const uid = React.useId().replace(/:/g, "");
+  const paths = [0, 1, 2].map((i) => {
+    const y = 5 + (hash01(seed * 13 + i) - 0.5) * 1.6;
+    const amp = 0.9 + hash01(seed * 7 + i) * 0.8;
+    let d = `M 0.5 ${y.toFixed(2)}`;
+    for (let x = 8; x <= 100; x += 8) {
+      const wob = (hash01(seed * 31 + i * 17 + x) - 0.5) * amp;
+      d += ` Q ${x - 4} ${(y + wob).toFixed(2)} ${x} ${(y + wob * 0.4).toFixed(2)}`;
+    }
+    return d;
+  });
+
+  const clip = Math.min(1, Math.max(0, p)) * 102;
+
+  return (
+    <svg
+      viewBox="0 0 100 10"
+      preserveAspectRatio="none"
+      aria-hidden
+      style={{
+        position: "absolute",
+        left: "-1.5%",
+        width: "103%",
+        bottom: "-0.02em",
+        height: "0.2em",
+        overflow: "visible",
+        pointerEvents: "none",
+        ...style,
+      }}
+    >
+      <defs>
+        <clipPath id={`bu-${uid}`}>
+          <rect x="-1" y="-2" width={clip} height="14" />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#bu-${uid})`}>
+        {paths.map((d, i) => (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            stroke={color}
+            strokeWidth={thickness * (i === 0 ? 1 : i === 1 ? 0.65 : 0.4)}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            opacity={i === 0 ? 0.95 : 0.8}
+          />
+        ))}
+      </g>
+    </svg>
+  );
+};
 
 /**
  * 纸纤维。两层不同周期的点阵叠在一起，避免出现可见的网格——

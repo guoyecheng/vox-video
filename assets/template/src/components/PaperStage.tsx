@@ -1,8 +1,9 @@
 /**
- * 背景。VOX 系的底子：纸面 + 细网格 + 一块会缓慢漂移的高饱和色块。
+ * 背景 = 一张摊在桌面上的旧地图/账页（MG-VOXSTAGE）。
  *
- * 色块不是装饰——它是"这一拍讲什么颜色"的锚，深色 beat（hook/quote）
- * 直接换成 night 底，整片的明暗节奏就出来了。
+ * 三层材质缺一不可：做旧色层 + 旧地图纹 + 半调网点/纤维/格线。
+ * 故意**没有**任何平涂区域——平涂在帧间完全一致，压缩器会把几十帧压成一帧，
+ * 回放起来"死"，整片立刻退回 PPT。深色底只留给 quote。
  */
 
 import React from "react";
@@ -12,6 +13,16 @@ import { FONT_BODY } from "../fonts";
 import { useBeatPresence } from "./BeatPresence";
 import { PAPER, STAGE_INFLATE, Tape, bandEdge, fiberStyle, hash01, jitter, roughEdge, sway } from "../paper";
 import type { StageLayer } from "../timeline";
+import { MapTexture } from "./MapTexture";
+
+/** 底纸上的霉斑/水渍。位置写死，读作"这张纸放过很久"，不参与运动 */
+const FOXING = [
+  { x: 7, y: 16, r: 240, o: 0.075 },
+  { x: 72, y: 10, r: 190, o: 0.05 },
+  { x: 93, y: 64, r: 270, o: 0.085 },
+  { x: 26, y: 90, r: 320, o: 0.09 },
+  { x: 54, y: 46, r: 190, o: 0.045 },
+];
 
 /** 背景里的纸屑：不是装饰，是让"这一整幅是一张拼贴"成立的地基。
  *  只从画幅边缘**露出一角**——整块铺进来会变成大色块，跟内容抢注意力，
@@ -70,7 +81,7 @@ export const PaperStage: React.FC<{
 
   // 网格是"账册格线"：拼贴的底纸常常是账本/方格纸，也顺手给背景一点可读的尺度。
   // 别调到 0 以下——它在画面上是一层很细的高频边缘，调没了整片的帧间差会明显掉。
-  const grid = interpolate(presence, [0, 1], [0, night ? 0.08 : 0.34], {
+  const grid = interpolate(presence, [0, 1], [0, night ? 0.04 : 0.12], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
@@ -123,10 +134,58 @@ export const PaperStage: React.FC<{
 
         <AbsoluteFill
           style={{
-            background: `radial-gradient(1100px 760px at ${18 + dx}% ${22 + dy}%, ${accent}2E 0%, transparent 68%),
-                         radial-gradient(880px 700px at ${86 - dx}% ${82 - dy}%, ${accent}1C 0%, transparent 64%)`,
+            background: `radial-gradient(1100px 760px at ${18 + dx}% ${22 + dy}%, ${accent}14 0%, transparent 68%),
+                         radial-gradient(880px 700px at ${86 - dx}% ${82 - dy}%, ${accent}0D 0%, transparent 64%)`,
           }}
         />
+        {/* 旧地图纹：这张底纸原本印的是什么。压在色斑上用 multiply 会触发
+            合成层残留（PaperStage 祖先有 transform），所以只走普通 alpha。
+            地图自己再漂 12px、转 0.2°：它和底纸不是同一层，视差让"镜头在纸上
+            慢慢扫过"成立。幅度超过 20px 就会被读成地图在滑动，不是镜头在动。 */}
+        <div
+          style={{
+            position: "absolute",
+            inset: -40,
+            transform: `translate(${sway(t, 503, 12, 160).x}px, ${
+              sway(t, 503, 12, 160).y
+            }px) rotate(${sway(t, 504, 0.2, 210).x}deg) scale(1.03)`,
+          }}
+        >
+          <MapTexture night={night} opacity={night ? 0.2 : 0.52} />
+        </div>
+        {/* 半调网点：印刷品的身份证。网点缓慢爬移 5px/秒——像印张在机器上
+            走了一点点，全画幅的高频边缘一直在变，静态拍也不会被压成一张图。
+            幅度再大就会读成"画面在抖"：位移必须是像素级、低频。 */}
+        <AbsoluteFill
+          style={{
+            backgroundImage: `radial-gradient(${
+              night ? "rgba(246,239,221,0.55)" : "rgba(58,46,28,0.55)"
+            } 0.8px, transparent 1px)`,
+            backgroundSize: "5px 5px",
+            backgroundPosition: `${((t * 0.16) % 5).toFixed(2)}px ${((t * 0.11) % 5).toFixed(2)}px`,
+            opacity: night ? 0.05 : 0.14,
+          }}
+        />
+        {/* 霉斑：几处极淡的暖棕水渍，越靠边越重 */}
+        {night
+          ? null
+          : FOXING.map((f, i) => (
+              <div
+                key={i}
+                style={{
+                  position: "absolute",
+                  left: `${f.x}%`,
+                  top: `${f.y}%`,
+                  width: f.r,
+                  height: f.r * 0.78,
+                  transform: "translate(-50%, -50%)",
+                  background: `radial-gradient(closest-side, rgba(104,72,32,${
+                    f.o * (0.6 + 0.4 * Math.sin(t / 210 + i))
+                  }), transparent 72%)`,
+                }}
+              />
+            ))}
+        {/* 账册格线：比地图更弱，只当纸的经纬 */}
         <AbsoluteFill
           style={{
             backgroundImage: `linear-gradient(${night ? "#ffffff" : COLORS.ink}22 1px, transparent 1px),
@@ -328,60 +387,16 @@ export const PaperStage: React.FC<{
           pointerEvents: "none",
         }}
       />
-      {/* 边缘压暗留在最外层：它是柔渐变，跟着定格动会变成"画框在呼吸"，反而假 */}
+      {/* 边缘压暗留在最外层：它是柔渐变，跟着定格动会变成"画框在呼吸"，反而假。
+          旧纸的四角本来就比中间深，这一圈也是"实物"的一部分 */}
       <AbsoluteFill
         style={{
           pointerEvents: "none",
           boxShadow: night
-            ? "inset 0 0 280px rgba(0,0,0,0.45)"
-            : "inset 0 0 190px rgba(74,55,28,0.10)",
+            ? "inset 0 0 280px rgba(0,0,0,0.5)"
+            : "inset 0 0 240px rgba(74,55,28,0.20)",
         }}
       />
     </AbsoluteFill>
-  );
-};
-
-/** 左上角的 beat 序号 + 分段标题，给观众一个"讲到第几步"的锚 */
-export const BeatLabel: React.FC<{
-  index: number;
-  total: number;
-  label?: string;
-  accent: string;
-  tone?: "paper" | "night";
-}> = ({ index, total, label, accent, tone = "paper" }) => {
-  const { presence } = useBeatPresence();
-  const ink = tone === "night" ? COLORS.nightInk : COLORS.ink;
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 14,
-        opacity: presence,
-      }}
-    >
-      <div
-        style={{
-          width: 44,
-          height: 6,
-          borderRadius: 3,
-          background: accent,
-        }}
-      />
-      <div
-        style={{
-          fontSize: 32,
-          fontWeight: 700,
-          letterSpacing: 4,
-          color: ink,
-          opacity: 0.55,
-          textTransform: "uppercase",
-        }}
-      >
-        {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
-        {label ? `　${label}` : ""}
-      </div>
-    </div>
   );
 };

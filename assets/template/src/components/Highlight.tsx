@@ -1,11 +1,12 @@
 /**
- * 荧光笔划线 + 圈注高亮。VOX 系最标志性的两个"手写感"动作。
+ * 记号笔划线 + 圈注。档案纸上最自然的两个"有人读过"的手势。
  *
- *   highlight —— 荧光笔条从左往右扫过，把重点词衬在色带底下
- *   circle    —— 手绘感的椭圆圈住重点，边画边成形
+ *   highlight —— 红色马克笔条从左往右扫过，词下再压一道红笔线
+ *   circle    —— 手绘感的框圈住重点，边画边成形
  *
- * 两者都是"画"出来的，不是淡入：色带用 scaleX 生长，椭圆用
- * stroke-dashoffset 描边。给静态文字一点手工感，画面立刻不像模板。
+ * 两者都是"画"出来的，不是淡入：色带用 scaleX 生长，圈用 opacity+scale
+ * 追上来。颜色**固定正红**——红是记号，不跟每拍的 accent 走，
+ * 否则遇到灰/黄的拍会读成"选中状态"，那是 UI，不是纸。
  *
  * 和 `Callout` 的区别：Callout 是在**图片**上圈注，这个是在**文字**上。
  */
@@ -14,12 +15,12 @@ import React from "react";
 import { COLORS } from "../theme";
 import { FONT_BODY, FONT_DISPLAY } from "../fonts";
 import type { Beat, VisualSpec } from "../timeline";
+import { BrushUnderline, roughEdge } from "../paper";
 import { useBeatPresence, useBeatWords, useStage, resolveWordTimings } from "./BeatPresence";
 
 export const Highlight: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }> = ({
   beat,
   visual,
-  accent,
 }) => {
   const { presence } = useBeatPresence();
   const { after } = useBeatWords(beat.words);
@@ -135,22 +136,33 @@ export const Highlight: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
                 whiteSpace: "nowrap",
               }}
             >
-              {/* 荧光笔条：从左往右扫，略歪，底边比顶边厚一点点，模仿马克笔 */}
+              {/* 马克笔条：红色低透明度、毛边、微斜。透明度必须低——
+                  红一旦铺满就成了背景色，不再是"记号"。 */}
               <span
                 style={{
                   position: "absolute",
-                  left: "-0.06em",
-                  right: "-0.06em",
-                  top: "0.12em",
-                  bottom: "0.02em",
-                  background: accent,
-                  opacity: 0.42,
-                  borderRadius: 4,
+                  left: "-0.07em",
+                  right: "-0.07em",
+                  top: "0.1em",
+                  bottom: "0.03em",
+                  background: COLORS.accent,
+                  opacity: 0.16,
+                  clipPath: roughEdge(mi + 41, 2.2, 7),
                   transformOrigin: "left center",
-                  transform: `scaleX(${seg.circle ? 1 : markOn}) rotate(-0.35deg)`,
+                  transform: `scaleX(${seg.circle ? 1 : markOn}) rotate(-0.6deg)`,
                 }}
               />
               <span style={{ position: "relative" }}>{seg.text}</span>
+              {/* 红笔线：记号笔圈的词也必须有线，否则只剩一块淡粉底 */}
+              {seg.circle ? null : (
+                <BrushUnderline
+                  p={markOn}
+                  color={COLORS.accent}
+                  seed={mi + 53}
+                  thickness={7}
+                  style={{ bottom: "-0.12em", height: "0.18em" }}
+                />
+              )}
 
               {seg.circle ? (
                 // 手绘感圈注：用 CSS 圆角框而不是 SVG 椭圆。
@@ -165,7 +177,7 @@ export const Highlight: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
                     right: "-0.1em",
                     top: "-0.16em",
                     bottom: "-0.1em",
-                    border: `5px solid ${accent}`,
+                    border: `5px solid ${COLORS.accent}`,
                     // 四个角的半径故意不等，模拟手画。
                     // 用 px 不用 %：短语宽度会变（圈 2 个字还是 8 个字），
                     // 百分比会让同一组值在窄框上变成圆角、宽框上几乎变成直角。

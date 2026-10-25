@@ -270,7 +270,7 @@ const Donut: React.FC<{
   // 调色板要把 accent 放在第一位，但**必须跳过与 accent 重复的颜色**——
   // 否则某一拍的 accent 正好是 blue 时，palette[0] 和 palette[1] 会撞成同一个色，
   // 饼图上相邻两段分不出来。
-  const base = [COLORS.blue, COLORS.gold, COLORS.teal, COLORS.magenta, COLORS.accent];
+  const base = [COLORS.gold, COLORS.ink, COLORS.halftone, COLORS.stageDeep, COLORS.accent];
   const palette = [accent, ...base.filter((c) => c !== accent)];
   const colorAt = (i: number) => palette[i % palette.length];
 
