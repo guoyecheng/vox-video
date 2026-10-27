@@ -209,8 +209,9 @@ export const CaptionTrack: React.FC<{
           clipPath: roughEdge(5, 4.2, 8),
           boxShadow: "0 2px 0 rgba(52,39,22,0.16), 0 14px 26px rgba(46,34,18,0.26)",
           fontFamily: FONT_BODY,
-          // 1080p 字幕下限是有效字高 ≥56px。中文低于这个数在手机小窗里会糊
-          fontSize: 56,
+          // 1080p 字幕下限 60px（见 references/readability.md）。手机竖看时
+          // 画面缩到约 480 宽，60px 只剩约 15px，再小就吃力
+          fontSize: 60,
           fontWeight: 700,
           lineHeight: 1.45,
           textAlign: "center",

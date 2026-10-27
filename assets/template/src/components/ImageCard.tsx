@@ -25,11 +25,11 @@ export const ImageCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
   const probe = resolveWordTimings([(visual.caption ?? "").slice(0, 4)], beat.words, beat.durationInFrames)[0];
   const captionP = after(probe?.t ?? 0, 14);
 
-  // 字幕轨开着时，底部 96px 内边距 + 两行 56px 字幕是禁入区。
+  // 字幕轨开着时，底部 96px 内边距 + 单行 60px 字幕是禁入区。
   // 图不能按 78% 宽度硬撑——16:9 撑满 78% 有 842px 高，加上上边距就顶穿字幕。
   // 所以同时受可用宽度和可用高度约束，谁更紧听谁的。
   const TOP = 140;
-  const bottomReserve = TIMELINE.captions ? 210 : 120;
+  const bottomReserve = TIMELINE.captions ? 220 : 120;
   const maxW = Math.round(width * 0.78);
   const maxH = height - TOP - bottomReserve;
   const imgH = Math.round(Math.min(maxH, (maxW * 9) / 16));

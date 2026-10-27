@@ -12,8 +12,11 @@
 2. 转场重复度      —— 相邻两拍用同一种转场（等于没转）
 3. 入场配方重复度  —— 相邻两拍同一种入场配方（自动轮换不会重复，报出来就是手写写重）
 4. 全画面冲击上限  —— impact/flash 作用于整画面，按"大 slam"计，全片 ≤3
-5. 字号下限        —— 扫组件源码，1080p 下正文 ≥32px、主叙事 ≥56px
-6. 能量骨架        —— 首拍必须是 hook，末拍必须收束
+5. 字号下限        —— 扫组件源码，1080p 下正文 ≥32px、字幕 ≥60px
+6. 对比度          —— 从 theme.ts 读五支颜色，审文字/背景组合（WCAG AA）
+7. 能量骨架        —— 首拍必须是 hook，末拍必须收束
+
+字号、对比度、安全区和停留时间的出处与换算见 `references/readability.md`。
 
 用法
 ----
@@ -39,6 +42,33 @@ MAX_WHOLE_FRAME_HITS = 3
 # 1080p 下的字号下限
 MIN_AUX_PX = 32
 MIN_MAIN_PX = 56
+# 字幕是观众读得最久的一层，按参考片实测取 60（不是 56）
+MIN_CAPTION_PX = 60
+
+# WCAG 2.2 AA：正文 4.5:1，大字（≥24px 或 ≥18.5px 粗体）3:1
+CONTRAST_BODY = 4.5
+CONTRAST_LARGE = 3.0
+
+# 只审"组件里真的当文字用"的组合。键名对应 src/theme.ts 的 COLORS。
+# (前景, 背景, 下限, 用在哪)
+CONTRAST_PAIRS = (
+    ("ink", "paper", CONTRAST_BODY, "标题 / 正文落在纸面"),
+    ("ink", "paperAlt", CONTRAST_BODY, "卡片标题落在浅纸"),
+    ("ink", "stage", CONTRAST_BODY, "文字直接落在底纸"),
+    ("inkSoft", "paper", CONTRAST_BODY, "次要正文落在纸面"),
+    ("inkSoft", "paperAlt", CONTRAST_BODY, "次要正文落在浅纸"),
+    ("inkSoft", "stage", CONTRAST_BODY, "次要正文落在底纸"),
+    ("nightInk", "night", CONTRAST_BODY, "quote 深底上的字"),
+    ("accent", "paper", CONTRAST_LARGE, "红色关键词（只给大字/粗体）"),
+    ("accent", "paperAlt", CONTRAST_LARGE, "红色关键词落在浅纸（只给大字）"),
+    ("accentSoft", "paper", CONTRAST_LARGE, "浅红强调（只给大字）"),
+    ("gold", "night", CONTRAST_LARGE, "深底上的芥末黄"),
+)
+# 量出来备查、但不判失败：这些色在纸面上本来就不是"文字色"。
+CONTRAST_CAVEATS = (
+    ("gold", "paper", "芥末黄只做纸片底/装饰，当文字读不清"),
+    ("inkFaint", "paper", "网点灰当次要标签也偏浅，正文改用 inkSoft"),
+)
 
 WARN = "!"
 FAIL = "x"
@@ -309,8 +339,97 @@ def check_font_floor(src: Path) -> tuple[list[str], list[str]]:
         problems.append(f"字号过小：{b}")
     if not bad:
         out.append(f"   {OK} 全部达标")
-    out.append(f"（主叙事文字 ≥{MIN_MAIN_PX}px，1080p 下低于此值在手机小窗里读不清）")
+    out.append(f"（主叙事文字 ≥{MIN_MAIN_PX}px、字幕 ≥{MIN_CAPTION_PX}px；"
+               "依据与换算见 references/readability.md）")
     return out, problems
+
+
+def _caption_source(src: Path) -> Path | None:
+    direct = src / "components" / "CaptionTrack.tsx"
+    if direct.exists():
+        return direct
+    hits = sorted(src.rglob("CaptionTrack.tsx"))
+    return hits[0] if hits else None
+
+
+def check_caption_size(src: Path) -> tuple[list[str], list[str]]:
+    """字幕字号单独卡 60px：它是全片读得最久的一层，不能跟普通正文同一条线。"""
+    out, problems = [], []
+    f = _caption_source(src)
+    if f is None:
+        return [f"\n字幕字号：跳过（{src} 里没有 CaptionTrack.tsx）"], []
+    text = f.read_text(encoding="utf-8")
+    m = re.search(r"fontSize:\s*(\d+)", text)
+    if not m:
+        out.append("\n字幕字号：找不到 fontSize，跳过")
+        return out, problems
+    n = int(m.group(1))
+    line = text[:m.start()].count(chr(10)) + 1
+    if n < MIN_CAPTION_PX:
+        msg = (f"字幕 fontSize={n}（{f.name}:{line}），1080p 下限 {MIN_CAPTION_PX}px——"
+               "手机竖看缩到约 480 宽只剩 15px，再小就糊；改完跑 sync_template 同步")
+        problems.append(msg)
+        out.append(f"\n字幕字号：{FAIL} {msg}")
+    else:
+        out.append(f"\n字幕字号：{OK} {n}px（下限 {MIN_CAPTION_PX}px）")
+    return out, problems
+
+
+def relative_luminance(color: str) -> float:
+    """WCAG 2.2 相对亮度。只认 #rrggbb。"""
+    c = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    c = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+def contrast_ratio(fg: str, bg: str) -> float:
+    a, b = relative_luminance(fg), relative_luminance(bg)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+def theme_colors(src: Path) -> dict[str, str]:
+    """从 src/theme.ts 读 COLORS 里的 #rrggbb。找不到就返回空。"""
+    for name in ("theme.ts", "theme.tsx", "theme.js", "theme.jsx"):
+        f = src / name
+        if not f.exists():
+            continue
+        text = f.read_text(encoding="utf-8")
+        m = re.search(r"COLORS\s*=\s*\{(.*?)\}", text, re.S)
+        if not m:
+            continue
+        return {k: v for k, v in re.findall(
+            r"(\w+)\s*:\s*[\"'](#[0-9A-Fa-f]{6})[\"']", m.group(1))}
+    return {}
+
+
+def contrast_audit(colors: dict[str, str]) -> tuple[list[str], list[str]]:
+    """纯函数：给定色板，返回报告行和问题。方便自检直接喂假色板。"""
+    out, problems = [], []
+    checked = 0
+    for fg, bg, floor, role in CONTRAST_PAIRS:
+        if fg not in colors or bg not in colors:
+            continue
+        r = contrast_ratio(colors[fg], colors[bg])
+        checked += 1
+        mark = OK if r >= floor else FAIL
+        out.append(f"   {mark} {fg}/{bg:<9} {r:>5.2f}:1  ≥{floor}  {role}")
+        if r < floor:
+            problems.append(f"对比度不足：{fg}/{bg} {r:.2f}:1 < {floor}:1（{role}）")
+    for fg, bg, note in CONTRAST_CAVEATS:
+        if fg not in colors or bg not in colors:
+            continue
+        r = contrast_ratio(colors[fg], colors[bg])
+        out.append(f"   {WARN} {fg}/{bg:<9} {r:>5.2f}:1  {note}")
+    out.insert(0, f"\n对比度（WCAG 2.2 AA，审了 {checked} 组文字/背景）：")
+    return out, problems
+
+
+def check_contrast(src: Path) -> tuple[list[str], list[str]]:
+    colors = theme_colors(src)
+    if not colors:
+        return [f"\n对比度：跳过（{src} 里没有 theme.ts 的 COLORS）"], []
+    return contrast_audit(colors)
+
 
 
 def check_arc(beats: list[dict]) -> tuple[list[str], list[str]]:
@@ -365,8 +484,12 @@ def main() -> None:
 
     sections, problems = [], []
     for fn in (check_visual_variety, check_transitions, check_motion_variety,
-               check_shot_rhythm, check_impact_budget, check_font_floor, check_arc):
-        out, probs = fn(beats) if fn not in (check_font_floor,) else fn(src)
+               check_shot_rhythm, check_impact_budget, check_font_floor,
+               check_caption_size, check_contrast, check_arc):
+        if fn in (check_font_floor, check_caption_size, check_contrast):
+            out, probs = fn(src)
+        else:
+            out, probs = fn(beats)
         sections.extend(out)
         problems.extend(probs)
 

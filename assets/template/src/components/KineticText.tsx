@@ -55,7 +55,7 @@ export const KineticText: React.FC<{
   const fitWidth = Math.floor(maxWidth / longest);
   const lineHeight = 1.12;
   const rowGapRatio = 0.14;
-  // 底部字幕条常驻：56px 字号 + 上下 padding + 96px 底距 ≈ 210px，
+  // 底部字幕条常驻：60px 字号 + 上下 padding + 96px 底距 ≈ 215px，
   // 再留 30px 呼吸。运镜会整幅放大（push_in ×1.035、whip ×1.2），
   // 放大会把内容继续往下推，所以留白要按缩放后的底边算，不能只看未缩放的排版。
   // bottom-third 锚在下缘，被放大的幅度最大，单独多让 40px。

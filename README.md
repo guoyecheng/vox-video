@@ -29,7 +29,7 @@ scaffold → 效果图 → script.json → preflight → TTS + timeline.json →
 | `assets/script.example.json` | `script.json` 带注释示例 |
 | `assets/images.example.json` | 配图清单示例 |
 | `assets/comfy/` | ComfyUI 工作流与模型文件名清单 |
-| `references/` | 叙事弧、组件 props、ComfyUI、实测调优、排错手册 |
+| `references/` | 叙事弧、画面变化、可读性硬指标、组件 props、ComfyUI、实测调优、排错手册 |
 | `scripts/` | 流水线脚本 |
 | `evals/` | 回归用例 |
 
@@ -82,6 +82,7 @@ cd "<项目>" && npm run render
 
 # 7. 渲后自检
 python "<skill>/scripts/check_motion.py" --project "<项目>"
+python "<skill>/scripts/check_richness.py" --project "<项目>"
 python "<skill>/scripts/verify_sync.py" --project "<项目>"
 ```
 
@@ -92,8 +93,9 @@ python "<skill>/scripts/verify_sync.py" --project "<项目>"
 | `preflight.py` | 配音前 | 校验 `script.json`：id 重复、kind 拼错、缺字段、图/字体缺失、配图拍数不够、枚举错误 |
 | `vox_tts.py` | 闸门 A 后 | 合成配音，按实测音频生成 `timeline.json` |
 | `stills.py` | 闸门 0 / 闸门 B | 按 beat 抽静帧 + 联络表 |
-| `check_rhythm.py` | 闸门 B 前 | 检查节奏单调、字号过小、类 CSS 动画 |
+| `check_rhythm.py` | 闸门 B 前 | 检查节奏单调、字号/字幕下限、WCAG 对比度、类 CSS 动画 |
 | `check_motion.py` | 渲染后 | 逐拍均差、九宫格、静止占比，可对比基线 |
+| `check_richness.py` | 渲染后 | 每 2.5 秒抽格：相邻格变化、几乎没变的接缝、在动帧、最长静止 + 联络表 |
 | `verify_sync.py` | 渲染后 | 音画同步（包络互相关），区分系统偏移与抖动 |
 | `comfy_gen.py` | 闸门 0 起（每片强制） | 调 ComfyUI 出图，`--check` 自检服务与模型，`--dry-run` 给用户过提示词 |
 | `bakeoff.py` | 定视觉风格前 | 同一 brief 多风格各出一张 + 对比表 |
