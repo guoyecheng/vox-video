@@ -18,7 +18,7 @@
 | 脚本 | 什么时候跑 | 挑什么错 |
 |---|---|---|
 | `preflight.py` | 配音之前 | id 重复、kind 拼错、缺必填字段、图文件不存在、层少 `y`、枚举值写错、字体缺失 |
-| `stills.py` | 渲染之前（闸门 B） | 文字溢出、字幕压主体、转场接缝、数字和标签、配图跑题、图里冒出文字 |
+| `stills.py` | 闸门 0（效果图）/ 渲染之前（闸门 B） | 文字溢出、字幕压主体、转场接缝、数字和标签、配图跑题、图里冒出文字 |
 | `check_motion.py --baseline` | 渲染之后 | 哪几拍变死了（拿旧成片逐拍比） |
 
 `preflight.py` 的 kind / transition 名单是从项目源码 `src/timeline.ts`、`src/transitions.ts`

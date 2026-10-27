@@ -628,6 +628,30 @@ def test_render_gate_requires_still_approval() -> str:
     return "关键帧确认后才渲染"
 
 
+def test_images_are_mandatory() -> str:
+    """配图是硬要求；闸门 0（效果图）必须排在写稿与配音之前。"""
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    assert "### 闸门 0" in skill, "缺闸门 0（开工前效果图）"
+    assert skill.index("### 闸门 0") < skill.index("### 闸门 A"), \
+        "闸门 0 必须排在闸门 A 之前"
+    assert "每一片都必须有配图" in skill, "SKILL.md 没写配图是硬要求"
+    assert "配图是可选步骤" not in skill, "SKILL.md 还在说配图可选"
+
+    with tempfile.TemporaryDirectory() as td:
+        rep = preflight.Report()
+        beats = [{"id": f"b{i}", "visual": {"kind": "kinetic"}} for i in range(6)]
+        preflight.check_image_coverage(Path(td), rep, beats)
+        assert rep.errors and "配图不够" in rep.errors[0], "6 拍零配图应当报错"
+
+        rep2 = preflight.Report()
+        beats2 = [{"id": f"b{i}", "visual": {"kind": "kinetic"}} for i in range(6)]
+        for i in (0, 2, 4):
+            beats2[i]["visual"] = {"kind": "kinetic", "image": "img/b.png"}
+        preflight.check_image_coverage(Path(td), rep2, beats2)
+        assert not rep2.errors, f"3/6 拍有配图不应报错：{rep2.errors}"
+    return "配图下限 + 闸门 0 顺序"
+
+
 def test_word_helpers_are_pure_module() -> str:
     """对齐逻辑必须住在无 React 依赖的 words.ts 里，否则 node 套件测不到。"""
     words = (TEMPLATE / "src" / "words.ts").read_text(encoding="utf-8")
@@ -766,6 +790,7 @@ TESTS = [
     test_word_helpers_are_pure_module,
     test_paper_tiles_wired,
     test_render_gate_requires_still_approval,
+    test_images_are_mandatory,
     test_tail_never_shows_bare_stage,
     test_cutout_keying_keeps_enclosed_colors,
     test_cutouts_wired_and_validated,

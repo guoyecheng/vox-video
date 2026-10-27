@@ -1,11 +1,18 @@
 ---
 name: vox-video
-description: 用 Remotion + Edge TTS 把中文旁白稿做成 VOX 风格的解说视频（fast-paced explainer：大字动态排版、数字卡片、时间轴、金句卡、配音与画面逐词对齐）。只要用户提到做解说视频/科普视频/动画视频/口播视频/解释型短视频、或提到 Remotion 配旁白、把文稿变成视频、给视频加配音和字幕、用 ComfyUI 给视频生成配图/素材图，就使用这个 skill —— 即使用户没说"VOX"或"Remotion"这几个字也要用。它同时负责从选题到成片的全流程：写稿→切 beat→TTS 配音→按音频真实时长生成时间轴→生成场景代码→渲染 MP4。**配音和渲染前会先停下来等用户确认，不会自己一路出片。**
+description: 用 Remotion + Edge TTS 把中文旁白稿做成 VOX 风格的解说视频（fast-paced explainer：大字动态排版、数字卡片、时间轴、金句卡、配音与画面逐词对齐）。只要用户提到做解说视频/科普视频/动画视频/口播视频/解释型短视频、或提到 Remotion 配旁白、把文稿变成视频、给视频加配音和字幕、给视频生成配图/素材图，就使用这个 skill —— 即使用户没说"VOX"或"Remotion"这几个字也要用。它同时负责从选题到成片的全流程：写稿→切 beat→TTS 配音→按音频真实时长生成时间轴→生成场景代码→渲染 MP4。**每片必须配图；开工前先出效果图给用户确认；配音和渲染前各停一次等确认，不会自己一路出片。**
 ---
 
 # VOX 风格解说视频生产线
 
 把一段中文旁白稿变成一条 VOX 风格的解说视频：画面跟着旁白逐词跳动，节奏紧凑，60-90 秒讲清一件事。
+
+## 四条硬规则
+
+1. **必须配图。** 每一片都要有 AI 配图，数量底线是 `max(3, ceil(拍数 / 3))` 拍（`image` / `layers` / `pieceBase` / `cutouts` / `kind: "image"` / `stage3d` 都算）。第一拍优先上图。`preflight.py` 把这条当**错误**拦，不是提醒。ComfyUI 不可用时停下来问用户，**不许拿斜纹占位板顶替**。
+2. **开工前先出效果图。** 立项后、写全稿前，先出一张真实样张（纸艺样帧 + 一张按本题出的配图）给用户看，拿到明确同意才动笔（[闸门 0](#闸门-0先出效果图再开工)）。
+3. **配音前确认稿子**（[闸门 A](#闸门-a先给分镜和事实再配音)）。
+4. **渲染前确认关键帧**（[闸门 B](#闸门-b先看关键帧图片再渲染整片)）。
 
 ## 最重要的一条：以音频为时钟
 
@@ -25,24 +32,53 @@ description: 用 Remotion + Edge TTS 把中文旁白稿做成 VOX 风格的解�
 
 推论：想调整节奏时，改的是 `script.json` 里的 `rate`（语速）和 `padAfter`（每个 beat 后留多少气口），然后重跑 TTS。**不要去代码里改帧数**——那会立刻让音频和画面对不上。
 
-## 两条确认闸门（不可跳过）
+## 三道确认闸门（不可跳过）
 
-这个 skill **不会自己一路跑到成片**。有两处必须停下来，等用户明确点头。
+这个 skill **不会自己一路跑到成片**。有三处必须停下来，等用户明确点头。
 
 | 闸门 | 停在哪 | 用户要确认什么 |
 |---|---|---|
-| **A 稿子** | `script.json` 写完、事实核完，**跑 TTS 之前** | 选题角度、beat 切分、旁白措辞、每个数字和出处 |
-| **B 画面** | `timeline.json` 生成后，**整片渲染之前** | 关键帧 PNG 联络表（用户亲眼看图）、字幕、转场、节奏 |
+| **0 效果图** | 立项后、写全稿前 | 纸艺质感、五色配色、字体字号、画面密度、**配图风格**（看真实样张，不是听描述） |
+| **A 稿子** | `script.json` 写完、事实核完，**跑 TTS 之前** | 选题角度、beat 切分、旁白措辞、每个数字和出处、配图提示词清单 |
+| **B 画面** | `timeline.json` 生成后，**整片渲染之前** | 关键帧 PNG 联络表（用户亲眼看图）、字幕、转场、节奏、配图是否就位 |
+
+### 闸门 0：先出效果图，再开工
+
+立项之后**先不要写 `script.json`**。按顺序做四件事，把结果直接发给用户：
+
+1. **写出图清单 + 确认链路**：`images.json` 先只写 hook 那一条（`--check` 也会读它），
+   然后跑 `python "<skill>/scripts/comfy_gen.py" --check --project "<项目>"`。
+   失败就停下来问用户（起服务 / 换服务器 / 明确同意换方案），**不许跳过配图**。
+2. **按本题出一张真实配图**：`--dry-run` 把拼好的提示词发给用户过一遍，再用
+   `--only <hook-id>` 出图。
+3. **出样张**：用 scaffold 生成的示例时间轴抽一批代表帧（联络表至少 3 张）——
+   ```bash
+   python "<skill>/scripts/stills.py" --project "<项目>" --sheet
+   ```
+4. **一起发给用户**：`out/stills/sheet.png`、`assets/mg-voxstage-style-board.png`、
+   第 2 步那张配图。用户要能一眼看到：纸艺质感、配色、字号、画面密度、配图风格。
+
+拿到明确同意后，才写完整 `script.json`、批量出图、跑 TTS。
+
+**为什么必须停：** 配图是这条管线里最贵的一步（一张几十秒到几分钟），风格定错要整批重出；
+稿子写完整再改视觉方向，分镜、镜头拆分、版式都要跟着重排。一张样张 1 分钟，返工 1 小时。
+
+| 借口 | 现实 |
+|---|---|
+| "用户已经说清楚要什么风格了" | 文字描述 ≠ 看到画面。风格是眼睛决定的事 |
+| "我先把全稿写完再一起给他看" | 视觉方向错了，越完整的稿子返工越贵 |
+| "ComfyUI 没开，先拿占位板凑一张" | 配图是硬要求；没有链路就停下来问用户，不要自己降级 |
+| "样张只是示例内容，不能代表成片" | 样张确认的是视觉语言，不是文案；这正是效果图的用途 |
 
 ### 闸门 A：先给分镜和事实，再配音
 
-写完 `script.json` 就停。给用户看这四样：
+写完 `script.json` 就停。给用户看这五样：
 
 - 一句话题目 + 时长预估（各 beat 旁白字数 ÷ 语速）
 - beat 表：`id` / 画面类型 `kind` / 旁白第一句
 - **所有具体数字、年份、人名、引述的出处**；拿不准的单独列出来问
 - 打算用的镜头类型分布（避免全片 `kinetic`）
-- 需要配图时，`images.json` 的**提示词清单**（见[素材图](#素材图comfyui)）
+- **`images.json` 的完整提示词清单**（必交；见[素材图](#素材图comfyui)）。配图拍数与分配理由一起说清楚
 
 然后等回复。用户明确说可以，才跑 `npm run tts`。
 
@@ -68,6 +104,7 @@ python "<skill>/scripts/stills.py" --project "<项目>" --sheet --tail
 - 每拍中段：主体、字幕、纸片字是否就位
 - 每拍出场前 8 帧（`--tail`）：转场接缝有没有露底、元素会不会突然跳走
 - 强调词纸片：贴的位置对不对、版式和颜色有没有撞（同拍两张别长得一样）
+- **配图拍**：图有没有真的就位、是否跑题、图里有没有冒出不该有的文字、纸浆覆盖后还能不能看清
 - `quote` / `compare` / `stat`：数字、单位、出处、左右栏有没有错
 
 **把 `sheet.png` 发给用户**（不是只报路径，也不是只说"我看过了"），逐条说清这次改了什么。
@@ -96,6 +133,8 @@ python "<skill>/scripts/stills.py" --project "<项目>" --sheet --tail
 
 **红色信号——出现任意一条就停下：**
 
+- 你正准备写完整 `script.json`，但还没把闸门 0 的效果图发给用户
+- 你正准备批量出图，但配图风格还没经用户确认
 - 你正准备跑 `npm run tts`，但还没把 beat 表发给用户
 - 你正准备跑 `remotion render`，但还没抽帧给用户看
 - 你在想"先渲出来再一起说"
@@ -103,13 +142,13 @@ python "<skill>/scripts/stills.py" --project "<项目>" --sheet --tail
 
 ## 目录
 
-- [确认闸门](#两条确认闸门不可跳过) — **配音和渲染前必须停下**
+- [确认闸门](#三道确认闸门不可跳过) — **效果图、配音、渲染前三处必须停下**
 - [五个阶段](#五个阶段) — 完整流程
 - [第 2 步：写稿 + 分镜](#2-写稿--分镜--scriptjson) — 你唯一要手写的文件
 - [分镜节奏](#分镜节奏vox-的命门) — 多长一个 beat、什么时候换画面（弧库见 `references/arcs.md`）
 - [风格基线](#风格基线) — 只有五支颜色、三层纸、三种手势，**开工前先读**
 - [选视觉组件](#选视觉组件) — 15 个组件覆盖 90% 场景
-- [素材图（ComfyUI）](#素材图comfyui) — 可选，自动出配图；风格预设 + bake-off 选风格
+- [素材图（ComfyUI）](#素材图comfyui) — **强制**：每片都要配图；风格预设 + bake-off 选风格
 - [转场与特效](#转场与特效) — 别让整片一个节奏（运镜层 / 程序化特效）
 - [配乐](#配乐) — 配乐 + 按旁白自动让路（ducking）
 - [自检](#自检) — 单调 / 不同步都能自动查出来
@@ -134,7 +173,8 @@ python "<skill>/scripts/stills.py" --project "<项目>" --sheet --tail
 4. **没有页码、没有圆角卡片、没有彩色描边按钮**——出现任意一个，整片就退回 PPT。
 
 改风格不是改某一拍，是改 `src/theme.ts` + `PaperStage` + `paper.tsx` 这三处；
-改完先渲 3-4 张代表帧给用户看，**风格定下来再往下做分镜**。
+改完先渲 3-4 张代表帧给用户看（这就是[闸门 0](#闸门-0先出效果图再开工)），
+**风格定下来再往下做分镜**。
 
 ## 五个阶段
 
@@ -147,6 +187,9 @@ node "<skill>/scripts/scaffold.mjs" --slug <英文短横线名> --out "E:\AI\视
 会复制模板工程到 `E:\AI\视频制作\<slug>\`，并装好依赖。依赖里有 Remotion 自带的 ffprobe，后面量音频时长要用。
 
 **首次装依赖约 4 分钟**，请后台跑，别干等。已经装过的项目可以 `--from <已存在的项目路径>` 复用它的 `node_modules`（秒级完成）。
+
+**装完先过[闸门 0](#闸门-0先出效果图再开工)**：`comfy_gen.py --check` 通不通、样张好不好看、
+配图风格对不对。**没拿到确认之前不要写完整 `script.json`。**
 
 ### 2. 写稿 + 分镜 → `script.json`
 
@@ -166,9 +209,9 @@ node "<skill>/scripts/scaffold.mjs" --slug <英文短横线名> --out "E:\AI\视
 npm run preflight          # 等价于 python "<skill>/scripts/preflight.py" --project .
 ```
 
-它查 id 重复、kind 拼错、缺必填字段、图文件不存在、层少 `y`、枚举值写错、字体缺失、
-弧名不合法、`camera`/`vfx` 写错、配乐文件不存在、`stage3d` 坐标量级和三条 3D 依赖。
-有错先改，别去配音。
+它查 id 重复、kind 拼错、缺必填字段、图文件不存在、**配图拍数不够**、层少 `y`、
+枚举值写错、字体缺失、弧名不合法、`camera`/`vfx` 写错、配乐文件不存在、
+`stage3d` 坐标量级和三条 3D 依赖。有错先改，别去配音。
 
 **写稿之前先选一条叙事弧**（`arc` 字段）。弧决定 beat 的**顺序和形状**，
 组件决定 beat 的**长相**——两件事分开想。14 条弧、拍数数字表、hook 句式库、
@@ -309,10 +352,9 @@ python "<skill>/scripts/vox_tts.py" --project "<项目路径>"
 
 ### 4. 加视觉
 
-如果 `visual.kind` 是现成组件，到这儿就结束了，直接去第 5 步（渲染前仍要过闸门 B）。
-
-需要配图（`kind: "image"` 或 `visual.layers`）时，先在 `images.json` 里写提示词，
-过闸门 A 后跑 ComfyUI 出图，再在 `script.json` 里引用 `img/<id>.png`——
+组件都就位之后，**配图仍要补齐**——配图是每片的硬要求，不是"有组件就不用图"。
+先在 `images.json` 里写全提示词，过闸门 A 后跑 ComfyUI 出图，再在 `script.json` 里
+引用 `img/<id>.png`；`preflight.py` 会检查全片配图拍数，不够直接报错。
 细节与风格选择见[素材图（ComfyUI）](#素材图comfyui)。
 
 **先定"看的层"，再出图。** 纸艺系有 6 套风格预设，"哪套好看"是眼睛决定的事——
@@ -498,16 +540,27 @@ VOX 视频看着"信息密度高"，本质是**剪辑节奏快**。60 秒的片�
 
 ## 素材图（ComfyUI）
 
-配图是可选步骤：没有 ComfyUI 也能出片，`ImageCard` 会退化成斜纹占位板。
+**每一片都必须有配图，没有例外。** 配图拍数底线是 `max(3, ceil(拍数 / 3))`，
+第一拍（hook）优先。`preflight.py` 把这条当**错误**拦——纯排版的片子就是 PPT，
+不管你组件用得多花。
+
+没有 ComfyUI 不是降级理由：`ImageCard` 退化成斜纹占位板只是组件兜底，**不是可交付状态**。
+先 `--check`，不通就停下来问用户（起服务 / 换服务器 / 明确同意其它方案）。
+
+**优先给这些拍配图**：`hook`、`kinetic`、`cards`、`person`、`quote`、`image`。
+`stat` / `chart` / `timeline` / `split` 这类符号拍要么用 `imageLayout: "inset"`
+把图贴到右侧，要么不配——满幅图会和图表互相拆台。
 
 1. 项目根目录写 `images.json`（参照 `assets/images.example.json`），**一镜一条**。
    `scene` 按 `camera → subject → environment → materials → light → color → text`
    的顺序写，一拍要分层就写多条（`id` 加 `-far` / `-mid` / `-near`）。**`scene.text`
    是白名单**：不写字就留 `[]`；填了字就只许出现那几个字。蒸馏模型（Z-Image / FLUX）
    cfg=1.0，负向提示词不生效，文字只能靠这条白名单管住。
-2. `--check` 核对服务与模型，`--dry-run` 看拼好的提示词（**出图前给用户过一遍**，并入闸门 A）。
+2. `--check` 核对服务与模型（闸门 0 已先跑过一次）；`--dry-run` 看拼好的提示词
+   （**出图前给用户过一遍**，并入闸门 A）。
 3. 出图到 `public/img/<id>.png`，在 `script.json` 里写 `"image": "img/<id>.png"`
    （不是 `src`，`src` 只给 `kind: "image"` 用），重跑 `npm run tts`。
+4. 出图后跑 `npm run preflight` 确认配图拍数过线；不够就补拍再出图。
 
 ```bash
 python "<skill>/scripts/comfy_gen.py" --check --project "<项目>"
@@ -733,8 +786,9 @@ python "<skill>/scripts/check_motion.py" --project "<项目>" --baseline out/old
 
 ## 渲染
 
-> **闸门 B 已经通过才往下走。** 关键帧 `sheet.png` 已发给用户并拿到明确同意；
-> 没确认就先回闸门 B 抽帧，不要拿整片渲染当预览。
+> **闸门 B 已经通过才往下走。** `preflight` 通过、配图拍数过线、关键帧
+> `sheet.png` 已发给用户并拿到明确同意。没确认就先回闸门 B 抽帧，
+> 不要拿整片渲染当预览。**画面里还有斜纹占位板就不算过门。**
 
 ```bash
 cd "<项目>"
@@ -752,6 +806,9 @@ npx remotion render VoxVideo out/cover.png --frame=45   # 抽一帧做封面
 | 音画从片尾开始错位 | 改了代码里的帧数。改 `script.json` 的 `rate`/`padAfter` 再重跑 TTS |
 | **片尾旁白被截掉几秒** | 加了转场但没让气口装得下交叠。`npm run tts` 会自动把尾部留白撑到 ≥ `transitionFrames`；手改过时间轴就跑 `verify_sync.py` |
 | **画面越往后越早、片尾一段空白** | `from` 按音频时钟累加，而视觉被转场逐拍压缩。必须是 `cursor += dur - next_te`。`verify_sync` 查不出来，只能抽尾帧看 |
+| **preflight 报「配图不够」** | 配图是硬要求：至少 `max(3, ceil(拍数/3))` 拍要有 image / layers / pieceBase / cutouts / kind=image / stage3d。补 `images.json` 出图 |
+| **没出效果图就直接写稿 / 批量出图** | 违反闸门 0。先出样张给用户确认视觉与配图风格，再写全稿 |
+| **ComfyUI 没开就渲了占位板** | 非法交付。停下问用户（起服务 / 换机器 / 明确同意其它方案），不许降级 |
 | **加了 `image` 但画面没变** | Remotion 读的是 `src/timeline.json`（生成物）。改 `script.json` 后要重跑 `npm run tts` |
 | **像 PPT：旁白还在说，画面已定格** | 多数是**构图太空**：主体只占中间一小块，四周纯色把帧均差摊平。先让主体铺满（改布局），其次才补元素级动作；`visual.ambient` 只能救"完全不动"。用 `check_motion.py` 的逐拍均差定位，<1.5 算死拍 |
 | **长拍还是像 PPT** | 拍 ≥4s 的 `kinetic` 没写 `shots`，而旁白有多个从句——写 `shots` 按句切镜；不写也会自动按从句拆，但词尾没有标点就拆不开 |
@@ -804,13 +861,13 @@ python "<skill>/scripts/sync_template.py" --project "<项目>" --pull --force  #
 
 | 脚本 | 什么时候跑 | 干什么 |
 |---|---|---|
-| `scripts/preflight.py` | 配音**之前** | 查 script.json 的错：id 重复、kind 拼错、图不存在、层少 `y`、枚举值写错、字体缺失、stage3d 坐标与依赖 |
+| `scripts/preflight.py` | 配音**之前** | 查 script.json 的错：id 重复、kind 拼错、图不存在、**配图拍数不够**、层少 `y`、枚举值写错、字体缺失、stage3d 坐标与依赖 |
 | `scripts/vox_tts.py` | 闸门 A 之后 | 合成配音 + 生成 `src/timeline.json`（帧数由音频实测推导） |
-| `scripts/stills.py` | 闸门 B（渲染之前） | 按 beat 抽关键帧 + 联络表；`sheet.png` 直接发用户，`sheet.html` 可放大看标签 |
+| `scripts/stills.py` | 闸门 0（效果图）/ 闸门 B（渲染之前） | 按 beat 抽关键帧 + 联络表；`sheet.png` 直接发用户，`sheet.html` 可放大看标签 |
 | `scripts/check_rhythm.py` | 闸门 B 之前 | 查节奏单调、字号太小、类 CSS 动画 |
 | `scripts/check_motion.py` | 渲染之后 | 逐拍均差、九宫格、静止占比；`--baseline` 跟旧版逐拍对比 |
 | `scripts/verify_sync.py` | 渲染之后 | 音画同步（包络互相关），区分系统偏移和抖动 |
-| `scripts/comfy_gen.py` | 需要配图时 | 出配图；`--check` 先自检服务与模型 |
+| `scripts/comfy_gen.py` | 闸门 0 + 每片出图（强制） | 出配图；`--check` 先自检服务与模型，`--dry-run` 给用户过提示词 |
 | `scripts/bakeoff.py` | 定"看的层"之前 | 同一条 brief 按多套风格各出一张 + HTML 对比表，人来挑 |
 | `scripts/sync_template.py` | 改了组件之后 | 模板 ↔ 项目的代码同步；`--check` 看漂移，`--push` 推到项目，`--pull` 回灌模板 |
 | `scripts/scaffold.mjs` | 立项目 | 从模板复制出一个新工程 |
@@ -819,10 +876,12 @@ python "<skill>/scripts/sync_template.py" --project "<项目>" --pull --force  #
 一条命令跑完整条线（脚本都在 `scripts/` 里，路径换成你自己的）：
 
 ```bash
-python scripts/preflight.py --project .          # 1 体检
-npm run tts                                       # 2 配音 + 时间轴
+python scripts/comfy_gen.py --check --project .   # 0 出图链路（闸门 0）
+python scripts/stills.py --project . --sheet       # 0 效果图（发图等确认）
+python scripts/preflight.py --project .            # 1 体检（含配图拍数）
+npm run tts                                        # 2 配音 + 时间轴（闸门 A 之后）
 python scripts/stills.py --project . --sheet --tail   # 3 抽关键帧（闸门 B，发图等确认）
-npm run render                                    # 4 整片（确认之后）
+npm run render                                     # 4 整片（确认之后）
 python scripts/check_motion.py --project . --baseline out/old.mp4   # 5 体检
-python scripts/verify_sync.py --project .        # 6 同步校验
+python scripts/verify_sync.py --project .          # 6 同步校验
 ```

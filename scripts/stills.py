@@ -51,15 +51,15 @@ def find_remotion(project: Path) -> list[str]:
     sys.exit("[stills] 找不到 remotion。先在项目里跑一次 npm install。")
 
 
-def plan(timeline: dict, offset: int, tail: bool) -> list[dict]:
+def plan(timeline: dict, offset: int, tail: bool, tail_gap: int = 8) -> list[dict]:
     fps = timeline.get("fps", 30)
     out = []
     for b in timeline.get("beats", []):
         start = int(b["from"])
         dur = int(b["durationInFrames"])
         frames = [min(start + offset, start + dur - 1)]
-        if tail and dur > 12:
-            frames.append(max(start, start + dur - 8))
+        if tail and dur > tail_gap + 4:
+            frames.append(max(start, start + dur - tail_gap))
         for i, f in enumerate(frames):
             out.append({
                 "id": b["id"],
@@ -222,7 +222,9 @@ def main() -> int:
     ap.add_argument("--out", default="out/stills", help="输出目录（相对项目）")
     ap.add_argument("--beat", default=None, help="只抽这几拍，逗号分隔")
     ap.add_argument("--offset", type=int, default=30, help="抽帧位置：beat.from + offset")
-    ap.add_argument("--tail", action="store_true", help="每拍再抽一张出场前 8 帧")
+    ap.add_argument("--tail", action="store_true", help="每拍再抽一张出场前的帧")
+    ap.add_argument("--tail-gap", type=int, default=8,
+                    help="出场帧距拍尾的帧数；下一拍转场会盖住拍尾，抽取 onset 后可避开（默认 8）")
     ap.add_argument("--sheet", action="store_true", help="拼一张联络表")
     ap.add_argument("--scale", type=int, default=480, help="联络表每格宽度")
     ap.add_argument("--cols", type=int, default=4, help="联络表列数")
@@ -235,7 +237,7 @@ def main() -> int:
         sys.exit(f"[stills] 找不到 {tl}，先跑 npm run tts 生成时间轴。")
     timeline = json.loads(tl.read_text("utf-8"))
 
-    jobs = plan(timeline, a.offset, a.tail)
+    jobs = plan(timeline, a.offset, a.tail, a.tail_gap)
     if a.beat:
         want = {b.strip() for b in a.beat.split(",") if b.strip()}
         jobs = [j for j in jobs if j["id"] in want]

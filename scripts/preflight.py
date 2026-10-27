@@ -27,7 +27,8 @@ Remotion 渲染很慢（一条 60 秒的片子 3-8 分钟），而 `script.json`
 6. 取值域：imageLayout / motion / layout / tile / impact / ambient / transition 这些枚举别写错
 7. 批注：annotations 的 kind / 百分比坐标 / 字数 / 是否落进字幕带
 8. 纸片：tile 只对 kinetic / quote 生效；红纸整片最多一次
-9. 环境：字体文件在不在（缺了中文会静默回落雅黑）
+9. 配图：全片至少 max(3, ceil(拍数/3)) 拍带配图（硬要求，不是提醒）
+10. 环境：字体文件在不在（缺了中文会静默回落雅黑）
 
 用法
 ----
@@ -41,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -787,6 +789,54 @@ def check_visual(project: Path, rep: Report, where: str, visual: dict, narration
                         "（把带压到 y ≤ 0.72 最稳，或者干脆用整幅图）")
 
 
+def visual_has_image(visual: dict) -> bool:
+    """这一拍是否真的带配图。
+
+    kind=image、整幅配图、分层板、碎片底图、抠图元素、3D 纸片都算——它们都来自
+    images.json、都消耗出图成本，画面上也都有一张图。
+    """
+    if not isinstance(visual, dict):
+        return False
+    if visual.get("kind") == "image":
+        return True
+    if any(visual.get(k) for k in ("image", "layers", "pieceBase", "cutouts")):
+        return True
+    stage = visual.get("stage3d")
+    return isinstance(stage, dict) and bool(stage.get("pieces") or stage.get("mapSrc"))
+
+
+def check_image_coverage(project: Path, rep: Report, beats: list) -> None:
+    """配图是硬要求：全片至少 max(3, ceil(拍数/3)) 拍带图。
+
+    这不是风格偏好。没有配图的片子就是纯排版的 PPT，而 preflight 是唯一能在配音前
+    挡住它的地方——等成片再发现，返工的是整条片和整批配音。
+    """
+    n = len(beats)
+    # 1-2 拍的退化脚本不套这条：它更像组件调试稿，而不是可以交付的片子
+    if n < 3:
+        return
+    hits = [str(b.get("id") or i) for i, b in enumerate(beats)
+            if isinstance(b, dict) and visual_has_image(b.get("visual") or {})]
+    need = max(3, math.ceil(n / 3))
+    if len(hits) < need:
+        rep.err("script.json",
+                f"配图不够：{n} 拍里只有 {len(hits)} 拍有配图，至少需要 {need} 拍"
+                "（image / layers / pieceBase / cutouts / kind=image / stage3d）。"
+                "配图是硬要求——先写 images.json，用 comfy_gen.py 出图再引用")
+
+    first = beats[0] if isinstance(beats[0], dict) else {}
+    if not visual_has_image(first.get("visual") or {}):
+        rep.warn("script.json", "第一拍（hook）没有配图——钩子拍优先上图，第一眼要抓人")
+
+    def mentions_img(b: dict) -> bool:
+        return "img/" in json.dumps(b.get("visual") or {}, ensure_ascii=False)
+
+    if any(mentions_img(b) for b in beats if isinstance(b, dict)) \
+            and not (project / "images.json").exists():
+        rep.warn("script.json", "用了 img/ 素材但没有 images.json——出图清单不在，"
+                                "换台机器或重跑就复现不出来")
+
+
 # ---------------------------------------------------------------- 主体
 
 
@@ -842,6 +892,7 @@ def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
                      kinds, motions, layouts)
 
     check_shot_fit(project, rep, beats)
+    check_image_coverage(project, rep, beats)
 
     if len(red_tiles) > 1:
         rep.warn("script.json", f"红纸用了 {len(red_tiles)} 次（{', '.join(red_tiles)}）——"

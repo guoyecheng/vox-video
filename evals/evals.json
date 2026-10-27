@@ -176,6 +176,20 @@
         "项目装齐 three、@react-three/fiber、@remotion/three（版本与 remotion 一致），tsc 通过且能渲染出 mp4",
         "若该拍同时残留了 cutouts/pieces/image，preflight 有对应提醒，且确认这些 2D 元素没有出现在成片里"
       ]
+    },
+    {
+      "id": 14,
+      "prompt": "帮我把这段稿子做成解说视频，主题是「为什么高铁轨道要铺碎石」，一分钟，VOX 那种感觉，最后给我 mp4。",
+      "expected_output": "先出效果图确认、再开稿；成片必须带 AI 配图，且配图拍数过 preflight 底线",
+      "files": [],
+      "expectations": [
+        "写完整 script.json 之前，先跑了 comfy_gen.py --check，并把效果图（纸艺样帧 + 一张按本题生成的配图）发给用户、停下来等确认",
+        "效果图未确认前没有写完整 script.json，也没有批量出图",
+        "script.json 里至少 max(3, ceil(拍数/3)) 拍带配图（image / layers / pieceBase / cutouts / kind=image / stage3d）",
+        "images.json 存在，且每条配图都有可复现的 scene 提示词与 style_preset",
+        "成片里没有斜纹占位板：所有 ImageCard/Callout 的 src 都指向 public/img 下真实存在的图",
+        "preflight.py 通过（配图拍数达标的错误项不得出现）"
+      ]
     }
   ]
 }
