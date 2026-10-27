@@ -633,6 +633,44 @@ floatAt(frame, amp = 4, period = 64, seed = 0): number   // 返回 px 位移
 已用在 `KineticText`（逐词）、`TimelineRail`（年份标签）、`Route`（点位标签）、
 `CardStack`（卡片）、`CompareSplit`（双栏反向）、`Person`（肖像与姓名）。
 
+### `jitter()` / `anticipate()` / `blinkAt()` —— 手作感三件套
+
+```ts
+// paper.tsx：定格抖动，位置 + 旋转
+jitter(frame, seed, amp = 1.6, hold = 3, rotAmp = 0.6)
+  // → { x, y, rot }，拼进 transform；hold=2 是 15fps 的"一拍二"
+
+// effects.tsx：预备动作。p 是 0-1 进度，返回改过的进度
+anticipate(p, { a = 0.2, back = 0.08 })
+
+// effects.tsx：0-1 不透明度
+blinkAt(frame, { period = 30, duty = 0.5, phase = 0, smooth = false })
+```
+
+- **`jitter` 是按格抖，不是逐帧抖**：`hold` 帧才换一次位置（默认 3 帧 = 10fps，
+  15fps 手作感用 2），读起来像逐格拍摄的纸片；逐帧换值像电子噪声。
+  振幅 1-2px、旋转 0.4-0.8°，同一画面的多个元素用不同 `seed`。
+- **`anticipate` 只给要强调的那一下**（纸片贴上来、数字砸下）。前 20% 的时间
+  先反撤 8%，再冲过去；全片每个动作都预备会显得犹疑。
+- **`blinkAt` 管 REC 点、光标、警示灯**。灯多时要给不同 `phase` 错开，
+  同一秒里别闪超过 3 次；`smooth` 是呼吸灯，硬开关留给"记录中"这类信号。
+
+### `PaperDrop` —— 撕边纸片掉落进场
+
+`src/paperfx.tsx`。一张纸从画面上方掉下来，落地前回正，可再掉出画面。
+
+```tsx
+<PaperDrop at={6} x={960} y={540} width={180} height={230} seed={2}>
+  <div style={{ fontSize: 96 }}>纸</div>
+</PaperDrop>
+```
+
+- 一组纸片拼一行字时，`at` 一个比一个晚 3-4 帧，不要同时落。
+- 纸片是撕边的（复用 `roughEdge`），阴影垫在单独一层——`clip-path` 会把
+  `filter: drop-shadow` 一起裁掉。
+- 落地用 `Easing.back(1.2)`，比默认 1.7 收敛；起点倾斜给 ±8-10°。
+- `outAt` 之后再掉出画面，适合"纸片只是过场"的拍；常驻内容不要给 `outAt`。
+
 ### `Grain` —— 胶片颗粒
 
 全片铺一层，默认 3.5% 透明度。用确定性伪随机点阵（不是 SVG `feTurbulence`——
@@ -989,17 +1027,35 @@ volume(f) = gain × (1 − duck × 让路量(f)) × 淡入(f) × 淡出(f)
 所以转场纯属视觉决策，改它不会让旁白错位；但视觉时钟必须扣掉交叠帧
 （`cursor += dur - next_te`）。选型原则见 `SKILL.md` 的「转场与特效」。
 
-`transitions.ts` 暴露 16 种（Remotion 原生 20 种，未接入另外 4 种）：
+`transitions.ts` 暴露 17 种（Remotion 原生 20 种，未接入另外 4 种，另加 1 种自定义）：
 
 `none`（硬切）、`fade`、`dissolve`、`slide`、`pushCut`、`blurSlide`、`wipe`、
 `iris`、`clockWipe`、`flip`、`bookFlip`、`crossZoom`、`zoomInOut`、`dreamyZoom`、
-`filmBurn`、`ripple`。
+`filmBurn`、`ripple`、`paperCover`。
 
 别名：`default` → `fade`、`push` → `slide`、`cut` / `hard` → `none`、
-`book` → `bookFlip`、`burn` → `filmBurn`。
+`book` → `bookFlip`、`burn` → `filmBurn`、`paper` → `paperCover`。
 
 `clockWipe` / `iris` 必须传画幅尺寸，否则 Remotion 4.0.535 会算出 `NaN` 半径并抛
 `Malformed path data`。模板的 `transitionFor()` 已统一从 `useVideoConfig()` 喂入。
+
+### `paperCover` —— 纸片盖屏（自定义）
+
+纸片一片落下来盖满画面，切点换内容，再一片片掉走露出新一拍。实现见
+`src/paperfx.tsx`，注册在 `transitions.ts`，`check_rhythm` 和 preflight
+会像内置转场一样认它。
+
+```jsonc
+{ "id": "second", "transition": "paperCover", "transitionFrames": 18 }
+```
+
+- **必须给足 16-20 帧**（0.53-0.67s）。默认 10 帧时纸片还没落稳就切了，
+  会看到"半屏纸 + 半屏内容"。
+- progress 0.5 必须完全盖住，所以它不是叠化式的过渡；前一拍最后 0.3s
+  不要放关键信息，会被盖住。
+- 新场景在盖满前是隐藏的（Remotion 会把进入场景叠在上面，不藏会提前穿帮）；
+  代码里用 `presentationDirection` 判断，改动时别把这条去掉。
+- 纸片取色只有纸色 + 一块芥末黄，守住五色板；不要在转场里加入醒目正红的大面积色块。
 
 ---
 

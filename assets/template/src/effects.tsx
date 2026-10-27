@@ -211,6 +211,47 @@ export const floatAt = (
   seed = 0,
 ): number => Math.sin(seed * 2.399 + (frame / period) * Math.PI * 2) * amp;
 
+/**
+ * 预备动作：把 0-1 的进度改成"先往反方向退一点，再冲过去"。
+ *
+ * 和 Easing.out 的区别在于起手的反撤。只给**要强调的那一下**用
+ * （纸片贴上来、数字砸下、卡片推入）；全片每个动作都预备会显得犹疑。
+ *
+ * @param p 0-1 进度
+ * @param a 前多少比例的时间用来预备（0.2 = 前 20%）
+ * @param back 反撤幅度（0.08 = 退 8%）
+ */
+export const anticipate = (
+  p: number,
+  { a = 0.2, back = 0.08 }: { a?: number; back?: number } = {},
+): number => {
+  if (p <= 0) return 0;
+  if (p < a) return -back * Math.sin((Math.PI * p) / a);
+  const q = (p - a) / (1 - a);
+  return 1 - Math.pow(1 - q, 3);
+};
+
+/**
+ * 闪烁：返回 0-1 的不透明度。REC 点、光标、警示灯。
+ *
+ * @param period 一个周期多少帧。30fps 下 30 帧 = 1 秒
+ * @param duty 亮的时间占比
+ * @param phase 相位，几个灯要错开
+ * @param smooth true 时是柔和明暗（星星、呼吸灯），false 是硬开关
+ */
+export const blinkAt = (
+  frame: number,
+  {
+    period = 30,
+    duty = 0.5,
+    phase = 0,
+    smooth = false,
+  }: { period?: number; duty?: number; phase?: number; smooth?: boolean } = {},
+): number => {
+  const u = ((((frame + phase) % period) + period) % period) / period;
+  return smooth ? 0.5 + 0.5 * Math.cos(u * Math.PI * 2) : u < duty ? 1 : 0;
+};
+
 /* ---------------------------------------------------------------- 常驻运动层 */
 
 export type AmbientStrength = "off" | "soft" | "normal" | "strong";

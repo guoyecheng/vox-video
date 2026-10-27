@@ -30,6 +30,7 @@ import { blurSlide } from "@remotion/transitions/blur-slide";
 import { filmBurn } from "@remotion/transitions/film-burn";
 import { ripple } from "@remotion/transitions/ripple";
 import { none } from "@remotion/transitions/none";
+import { paperCover } from "./paperfx";
 
 /** 以 fade 的返回类型为基准。各 presentation 的 props 类型互不相同，
  *  统一收敛到这一个需要调用处无差别接受，故此处做一次 cast。 */
@@ -52,6 +53,8 @@ const REGISTRY = {
   dreamyZoom,
   filmBurn,
   ripple,
+  /** 纸片盖屏：纸片掉下来盖满、换内容、再掉走。需要 18 帧左右才不赶 */
+  paperCover,
 } as unknown as Record<string, () => Presentation>;
 
 /** 常用别名，省得背 Remotion 的原始命名 */
@@ -62,6 +65,7 @@ const ALIASES: Record<string, string> = {
   hard: "none",
   book: "bookFlip",
   burn: "filmBurn",
+  paper: "paperCover",
 };
 
 /**

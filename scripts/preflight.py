@@ -888,6 +888,11 @@ def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
         if b.get("transition") and b["transition"] not in transitions:
             rep.err(where, f"transition '{b['transition']}' 不认识"
                            f"（合法的：{', '.join(sorted(transitions))}）")
+        if b.get("transition") in ("paperCover", "paper"):
+            tf = b.get("transitionFrames") or data.get("transitionFrames") or 10
+            if isinstance(tf, int) and tf < 16:
+                rep.warn(where, f"paperCover 只给了 {tf} 帧——建议 16-20 帧，"
+                                "否则纸片还没落稳就切，会露出半屏内容")
         check_visual(project, rep, where, b.get("visual") or {}, narration or "",
                      kinds, motions, layouts)
 

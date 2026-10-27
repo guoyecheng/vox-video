@@ -51,12 +51,14 @@ export const tiltFor = (seed: number, amp = 0.6) => (hash01(seed) - 0.5) * 2 * a
  * 它是"这是实物"的核心信号——真实纸张被逐帧拍摄时，边缘一直在微微呼吸。
  *
  * `hold` 是保持帧数：每 3 帧换一次位置，读起来像 12fps 的定格，而不是视频抖动。
+ * `rotAmp` 是旋转振幅（度）。单独抖位置时纸片像在"跳"，带一点旋转才像被手碰过。
  */
-export const jitter = (frame: number, seed: number, amp = 1.6, hold = 3) => {
+export const jitter = (frame: number, seed: number, amp = 1.6, hold = 3, rotAmp = 0.6) => {
   const k = Math.floor(frame / hold) + seed * 17;
   return {
     x: (hash01(k) - 0.5) * 2 * amp,
     y: (hash01(k + 91) - 0.5) * 2 * amp,
+    rot: (hash01(k + 173) - 0.5) * 2 * rotAmp,
   };
 };
 

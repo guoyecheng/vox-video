@@ -28,4 +28,5 @@ export { CaptionTrack } from "./CaptionTrack";
 export { PieceLayer } from "./Pieces";
 export { CutoutLayer } from "./CutoutLayer";
 export { NoteLayer } from "./NoteLayer";
+export { PaperDrop } from "../paperfx";
 export { ChapterProgress, RunningHead } from "./Chrome";

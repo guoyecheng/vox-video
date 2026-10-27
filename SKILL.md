@@ -654,10 +654,16 @@ python scripts/bakeoff.py --project . --beat shot-hook   # → out/bakeoff/sheet
 | 换时代 / 换地方 / 换维度 | `wipe` / `iris` / `clockWipe` |
 | 翻到下一章 | `flip` / `bookFlip` |
 | 灾难、战乱、崩盘 | `filmBurn` / `ripple` |
+| 纸片盖住画面再换内容（保持拼贴质感） | `paperCover` + `transitionFrames: 18` |
 | 同类型连续内容 | `none`（硬切比淡入淡出利落） |
 
 > **`dissolve` 不是"软溶解"。** Remotion 4.0.535 里它按**亮度**烧灼，平涂纸面亮度
 > 几乎一致 → 整幅闪一记橙色，像渲染错误。想要不惹眼的软切换用 `fade`。
+
+**`paperCover` 是自定义转场**：纸片一片片落下来盖满、切点换内容、再掉走。
+它必须给足 16-20 帧（默认 10 帧会看到"半屏纸 + 半屏内容"），且 progress 0.5
+处完全盖住——前一拍最后 0.3s 别放关键信息。实现与坑见
+`references/components.md#papercover--纸片盖屏自定义`。
 
 **一个接缝只用一式，不要叠加。** 甩镜糊段里再加闪白会被读作穿帮。
 
@@ -716,6 +722,10 @@ hook 句式见 `references/arcs.md`。
 > 不用 AI 抠图：抠图模型是真实照片训的，会把平涂纸艺的撕边吃掉；切矩形拼回去一个
 > 像素不差。两个静默坑（`mask-image` 不生效、拼满漏一像素要 `PAD = 0.004`）见
 > `references/components.md#碎片拼贴层piecestsx`。
+
+单张撕边纸片掉落用 `PaperDrop`（`src/paperfx.tsx`）：标题或关键词纸片从上方落下、
+落地回正，和 `Pieces` 的矩形切块不是一回事。一组纸片的 `at` 错开 3-4 帧，
+别同时落。参数见 `references/components.md#paperdrop--撕边纸片掉落进场`。
 
 ### 程序化特效与常驻运动
 
