@@ -28,13 +28,20 @@ export const Stack: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }>
   const items = (visual.items ?? []) as { title: string; detail?: string; tag?: string }[];
   if (!items.length) return null;
 
+  // 标题基本都不在旁白里逐字出现，只能均匀铺开。铺满整拍会把最后一条
+  // 压到退场前十几帧：观众刚看到"起义"，镜头就切走了。收掉尾部 14% 的
+  // 空档，最后一条能落定并停住一秒左右。
   const timings = resolveWordTimings(
     items.map((i) => i.title),
     beat.words,
-    beat.durationInFrames,
+    Math.round(beat.durationInFrames * 0.86),
   );
 
-  const available = height - 340;
+  // 顶部让报头，底部让开字幕带。以前只让 170px，堆到第四条时
+  // 最底下那条会被字幕整行盖住——堆得越高越严重。
+  const TOP = 150;
+  const BOTTOM = 310;
+  const available = height - TOP - BOTTOM;
   const slot = available / items.length;
   // 每多一项就往上推一格；超过可用高度后整体压缩
   const itemH = Math.min(150, Math.max(60, slot * 0.86));
@@ -49,7 +56,7 @@ export const Stack: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }>
         flexDirection: "column",
         justifyContent: "center",
         alignItems: "center",
-        padding: `150px ${pad}px 170px`,
+        padding: `${TOP}px ${pad}px ${BOTTOM}px`,
         opacity: presence,
       }}
     >
@@ -64,8 +71,6 @@ export const Stack: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }>
           const pr = after(timings[i]?.t ?? 0, 16);
           // 已出的项整体上移：新项从底部滑入
           const shownFromBottom = i;
-          const y =
-            available - (items.length - i) * (itemH + gap) + (1 - pr) * (itemH + gap);
 
           return (
             <PaperSheet

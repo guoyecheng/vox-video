@@ -234,7 +234,8 @@ export const KineticText: React.FC<{
           style={{
             position: "absolute",
             left: pad,
-            bottom: 96,
+            // 字幕轨占底部约 210px，出处压在 96 会被整条盖住
+            bottom: 228,
             fontSize: 32,
             color: toneNight ? COLORS.nightInk : COLORS.inkFaint,
             letterSpacing: 1,

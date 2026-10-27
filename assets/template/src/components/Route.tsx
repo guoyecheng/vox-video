@@ -61,9 +61,13 @@ export const Route: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }>
 
   // 右侧贴了照片（imageLayout: "inset"）时，地图让出一半画幅——
   // 点位按比例压到左侧，否则标签会压到照片上。这不是缩小地图，是"这张地图
-  // 只画在纸的左半边"。
-  const zoneW = visual.imageLayout === "inset" ? 0.46 : 1;
-  const placed = points.map((p) => ({ ...p, x: p.x * zoneW }));
+  // 只画在纸的左半边"。压缩后还要留 6% 左边界：纯乘系数会把最左边的
+  // 点位（起点）推到画幅外，圆点被裁成半个。
+  const inset = visual.imageLayout === "inset";
+  const placed = points.map((p) => ({
+    ...p,
+    x: inset ? 6 + p.x * 0.4 : p.x,
+  }));
 
   return (
     <div

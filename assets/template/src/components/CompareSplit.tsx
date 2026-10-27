@@ -84,9 +84,11 @@ export const CompareSplit: React.FC<{ beat: Beat; visual: VisualSpec; accent: st
   const left = visual.left ?? fallback;
   const right = visual.right ?? fallback;
 
-  // 右栏起点：旁白里第一次出现右栏标题的词
+  // 右栏起点：旁白里第一次出现右栏标题的词。但最多等到拍过 45%——
+  // 旁白有时把对比词留到 4 秒后，那半幅空纸在 VOX 的节奏里太久了。
+  const latest = Math.round(beat.durationInFrames * 0.45);
   const probe = resolveWordTimings([(right.title ?? "").slice(0, 4)], beat.words)[0];
-  const rightAt = probe?.t ?? Math.round(beat.durationInFrames * 0.45);
+  const rightAt = Math.min(probe?.t ?? latest, latest);
 
   const leftP = after(0, 16);
   const rightP = after(rightAt, 16);
@@ -208,7 +210,7 @@ export const CompareSplit: React.FC<{ beat: Beat; visual: VisualSpec; accent: st
             <div
               style={{
                 fontFamily: FONT_BODY,
-                fontSize: 37,
+                fontSize: 34,
                 lineHeight: 1.45,
                 color: COLORS.inkSoft,
               }}
@@ -229,8 +231,9 @@ export const CompareSplit: React.FC<{ beat: Beat; visual: VisualSpec; accent: st
         display: "flex",
         alignItems: "stretch",
         gap: Math.round(pad * 0.4),
-        // 底部让出字幕带：两栏的 detail 贴栏底，压到 120 会被字幕整行盖住
-        padding: `140px ${pad}px 250px`,
+        // 底部让出字幕带：两栏的 detail 贴栏底，压到 120 会被字幕整行盖住。
+        // 210 还不够——字幕两行时条顶在 790 左右，栏底必须收到它上面。
+        padding: `140px ${pad}px 310px`,
         opacity: presence,
       }}
     >

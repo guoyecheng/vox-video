@@ -13,11 +13,11 @@ import { useCurrentFrame } from "remotion";
 import { COLORS } from "../theme";
 import { FONT_BODY, FONT_DISPLAY, FONT_NUMERAL } from "../fonts";
 import type { Beat, VisualSpec } from "../timeline";
-import { useBeatPresence, useBeatWords, useStage, resolveWordTimings } from "./BeatPresence";
+import { useBeatPresence, useBeatWords, useStage } from "./BeatPresence";
 import { floatAt, LightSweep } from "../effects";
 import { PAPER, PaperSheet, sway } from "../paper";
 
-const INSET = 0.075; // 导轨两端各留 7.5%，给首尾节点的文字留出空间
+const INSET = 0.1; // 导轨两端各留 10%，给首尾节点的文字留出空间
 const NODE = 24; // 节点直径
 
 export const TimelineRail: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }> = ({
@@ -33,14 +33,13 @@ export const TimelineRail: React.FC<{ beat: Beat; visual: VisualSpec; accent: st
   const items = visual.milestones ?? [];
   if (!items.length) return null;
 
-  // 每个里程碑的年号在旁白里被念到的时刻。
-  // 年份通常不在旁白里（旁白说"从 802.11n 到现在"），那时会均匀铺开，
-  // 观众看到的是"节点跟着叙述推进"，而不是精确到词。
-  const timings = resolveWordTimings(
-    items.map((m) => m.year),
-    beat.words,
-    beat.durationInFrames,
+  // 里程碑必须按年代顺序亮。旁白常常只报其中一个年份（"两年后的 1969 年"），
+  // 交给词级匹配会让没被念到的年份按"未匹配"均匀铺到整拍末尾——1967 反而
+  // 最后出现。这一拍是账本式回顾，时间顺序本身就是信息，所以固定按索引错开。
+  const stagger = Math.round(
+    Math.min(90, beat.durationInFrames * 0.35) / Math.max(1, items.length - 1),
   );
+  const timings = items.map((m, i) => ({ t: i * stagger, d: 12, text: m.year }));
 
   // 导轨画到多远？把节点编号换算成"第几格"：节点 i 的位置是 i/(n-1) 格，
 // 导轨头从节点 i-1 走到节点 i，所以格数 = (i-1) + p，最后除以 (n-1)。
@@ -70,13 +69,13 @@ const railP = Math.min(
         display: "flex",
         flexDirection: "column",
         justifyContent: "center",
-        // 底部留出字幕高度，否则下半排年份会被字幕框压住
-        padding: `0 ${pad}px 240px`,
+        // 底部留出字幕高度，否则下半排年份会被字幕框压住；顶部让出报头
+        padding: `150px ${pad}px 250px`,
         opacity: presence,
       }}
     >
       {/* 高度按"画面要被时间轴占满"来定：560 时上下各空 260px，读起来像浮在中间的一条小线 */}
-      <div style={{ position: "relative", width: "100%", height: 640 }}>
+      <div style={{ position: "relative", width: "100%", height: 680 }}>
         {/* 一道窗光扫过整条轴。时间轴是纵向信息很薄的一拍，所有里程碑亮完之后
             就只剩一个小光点在跑；整幅的光要一直在动，画面才不会"停" */}
         <LightSweep duration={Math.round(beat.durationInFrames * 1.15)} color="#FFF6E2" width={60} />
@@ -151,15 +150,15 @@ const railP = Math.min(
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 10,
-                width: 320,
-                padding: "20px 22px",
+                width: 360,
+                padding: "18px 20px",
                 boxSizing: "border-box",
               }}
             >
               <div
                 style={{
                   fontFamily: FONT_NUMERAL,
-                  fontSize: 84,
+                  fontSize: 76,
                   lineHeight: 1,
                   color: accent,
                   letterSpacing: -1,
@@ -171,7 +170,7 @@ const railP = Math.min(
                 style={{
                   fontFamily: FONT_DISPLAY,
                   fontWeight: 900,
-                  fontSize: 40,
+                  fontSize: 36,
                   color: COLORS.ink,
                   textAlign: "center",
                   lineHeight: 1.25,
@@ -183,7 +182,7 @@ const railP = Math.min(
                 <div
                   style={{
                     fontFamily: FONT_BODY,
-                    fontSize: 36,
+                    fontSize: 32,
                     color: COLORS.inkSoft,
                     textAlign: "center",
                     lineHeight: 1.4,

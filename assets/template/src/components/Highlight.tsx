@@ -26,6 +26,11 @@ export const Highlight: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
   const { after } = useBeatWords(beat.words);
   const { pad, maxWidth } = useStage();
 
+  // 左对齐时不能还用居中的满宽：配图右缘常有主体（这里是一张红色价签），
+  // 满宽会让末尾几个字压在它上面，圈注也糊成一片。
+  const textWidth =
+    visual.align === "left" ? Math.round(maxWidth * 0.78) : maxWidth;
+
   const text = visual.text ?? beat.narration;
   const marks = visual.marks ?? [];
   const circled = visual.circled?.[0];
@@ -42,7 +47,10 @@ export const Highlight: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
   const markOn = after(at, 22);
   const ring = after(at + 10, 20);
 
-  const fontSize = text.length > 34 ? 60 : text.length > 20 ? 76 : 92;
+  // 76px 时 22 个字刚好越过 maxWidth，末两个字会被挤到第二行（"表。"单独一行）。
+  // 长句折行没关系，孤字不行——放不下就退一档。
+  const baseSize = text.length > 34 ? 60 : text.length > 20 ? 76 : 92;
+  const fontSize = baseSize === 76 && text.length * 76 > textWidth ? 62 : baseSize;
 
   /**
    * 把整句按标记位置切成段。
@@ -98,7 +106,7 @@ export const Highlight: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
       <div
         style={{
           position: "relative",
-          maxWidth,
+          maxWidth: textWidth,
           fontFamily: FONT_DISPLAY,
           fontWeight: 900,
           fontSize,
@@ -117,14 +125,10 @@ export const Highlight: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
           const on = seg.circle
             ? ring
             : after(at + mi * 10, 20);
-          if (on <= 0.001) {
-            return (
-              <span key={`m-${i}`} style={{ opacity: 0 }}>
-                {seg.text}
-              </span>
-            );
-          }
 
+          // 文字本身始终在版面上：只隐藏记号会在一句话中间挖出一个洞，
+          // 观众读到的是"渲染坏了"。记号（色带/红线/圈）由各自的 p 驱动，
+          // 未到时的 p=0，本来就看不见。
           return (
             <span
               key={`m-${i}`}

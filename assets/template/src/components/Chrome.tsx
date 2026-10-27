@@ -35,7 +35,7 @@ export const RunningHead: React.FC<{
       <div
         style={{
           fontFamily: FONT_BODY,
-          fontSize: 28,
+          fontSize: 32,
           fontWeight: 700,
           letterSpacing: 5,
           color: ink,

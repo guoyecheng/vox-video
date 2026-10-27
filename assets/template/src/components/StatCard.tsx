@@ -43,12 +43,13 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
     : beat.durationInFrames;
 
   const probe = resolveWordTimings([String(target)], beat.words)[0];
-  // 旁白根本没提这个数（常见于年份、总量类），那就按前 22% 起滚，
-  // 保证数字在观众听到它之前就已经长到位了
+  // 起滚必须早于拍前 18%：数字迟迟不动时，卡片上只剩一个 0.00，
+  // 那既不是事实，也不像仪表。值念得早时仍然卡词，念得晚时最多空转一秒多。
+  const latestStart = Math.round(beat.durationInFrames * 0.18);
   const startAt =
     beat.words.length && probe
-      ? Math.min(probe.t, Math.round(speechEnd * 0.85))
-      : Math.round(speechEnd * 0.22);
+      ? Math.min(probe.t, latestStart)
+      : Math.min(Math.round(speechEnd * 0.22), latestStart);
 
   const countP = after(startAt, Math.round(fps * 0.9));
   // 计数 0 → target，用 easeOut 让它"冲"到位然后稳住
@@ -67,18 +68,35 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
   const isBottom = layout === "bottom-third";
   const isBleed = layout === "full-bleed";
 
+  // split 是"数字一半、说明一半"的版式：320px 的六位数会把说明列挤成一条
+  // 竖排窄柱（"单价""美元" 还会各自折行）。分栏时整体降一档，并给数字组
+  // 加 flexShrink: 0，让说明列拿到固定可读宽度。
+  const numeralSize = isSplit ? 200 : 320;
+  const unitSize = isSplit ? 96 : 128;
+  const prefixSize = isSplit ? 64 : 96;
+  const metaWidth = Math.round(560);
+
   const numberGroup = (
     <div
       style={{
         display: "flex",
         alignItems: "baseline",
-        gap: 20,
+        gap: isSplit ? 18 : 20,
+        flexShrink: 0,
         opacity: presence,
         transform: `scale(${0.9 + presence * 0.1})`,
       }}
     >
       {visual.prefix ? (
-        <span style={{ fontFamily: FONT_NUMERAL, fontSize: 96, color: accent, fontWeight: 900 }}>
+        <span
+          style={{
+            fontFamily: FONT_NUMERAL,
+            fontSize: prefixSize,
+            color: accent,
+            fontWeight: 900,
+            whiteSpace: "nowrap",
+          }}
+        >
           {visual.prefix}
         </span>
       ) : null}
@@ -86,11 +104,12 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
       <span
         style={{
           fontFamily: FONT_NUMERAL,
-          fontSize: 320,
+          fontSize: numeralSize,
           lineHeight: 0.92,
           fontWeight: 900,
           color: COLORS.ink,
           letterSpacing: -8,
+          whiteSpace: "nowrap",
           // 数字刷新时轻微抖动一下，强化"在长"的感受
           filter: `drop-shadow(0 10px 40px ${accent}33)`,
         }}
@@ -103,8 +122,9 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
           style={{
             fontFamily: FONT_DISPLAY,
             fontWeight: 900,
-            fontSize: 128,
+            fontSize: unitSize,
             color: accent,
+            whiteSpace: "nowrap",
             opacity: unitP,
             transform: `translateX(${(1 - unitP) * 24}px)`,
           }}
@@ -122,16 +142,18 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
         flexDirection: "column",
         gap: 18,
         alignItems: isLeft || isSplit ? "flex-start" : "center",
+        ...(isSplit ? { flex: "0 0 auto", width: metaWidth, maxWidth: metaWidth } : {}),
       }}
     >
       {visual.label ? (
         <div
           style={{
             fontFamily: FONT_BODY,
-            fontSize: 54,
+            fontSize: isSplit ? 46 : 54,
             fontWeight: 700,
             color: COLORS.inkSoft,
-            letterSpacing: 2,
+            letterSpacing: isSplit ? 1 : 2,
+            lineHeight: 1.35,
             opacity: unitP,
             transform: `translateY(${(1 - unitP) * 20}px)`,
           }}
@@ -167,12 +189,14 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
         flexDirection: isSplit ? "row" : "column",
         alignItems: isLeft ? "flex-start" : "center",
         justifyContent: isBottom ? "flex-end" : "center",
-        gap: isSplit ? 90 : 26,
+        gap: isSplit ? 60 : 26,
         padding: isBleed
           ? `80px ${pad}px 90px`
           : isBottom
             ? `0 ${pad}px 190px`
-            : `0 ${pad}px`,
+            : isSplit
+              ? `0 ${Math.round(pad * 0.72)}px 120px`
+              : `0 ${pad}px`,
       }}
     >
       {numberGroup}
@@ -183,7 +207,8 @@ export const StatCard: React.FC<{ beat: Beat; visual: VisualSpec; accent: string
           style={{
             position: "absolute",
             left: pad,
-            bottom: 96,
+            // 字幕轨占底部约 210px，出处压在 96 会被整条盖住
+            bottom: 228,
             fontSize: 32,
             color: COLORS.inkFaint,
             letterSpacing: 1,

@@ -239,7 +239,7 @@ export const NoteLayer: React.FC<{ notes: NoteSpec[] }> = ({ notes }) => {
                   padding: "7px 16px",
                   fontFamily: FONT_BODY,
                   fontWeight: 700,
-                  fontSize: 27,
+                  fontSize: 32,
                   letterSpacing: 2,
                   color: colorOf(n),
                   whiteSpace: "nowrap",
@@ -314,7 +314,7 @@ export const NoteLayer: React.FC<{ notes: NoteSpec[] }> = ({ notes }) => {
                 style={{
                   fontFamily: FONT_BODY,
                   fontWeight: 900,
-                  fontSize: 31,
+                  fontSize: 32,
                   letterSpacing: 2,
                   color: COLORS.ink,
                   whiteSpace: "nowrap",

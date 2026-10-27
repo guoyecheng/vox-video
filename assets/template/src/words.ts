@@ -73,6 +73,25 @@ const aliasesFor = (needle: string): string[] => {
   return out;
 };
 
+const isDigit = (c: string | undefined) => c !== undefined && /\d/.test(c);
+
+/**
+ * 数字必须整段命中。
+ *
+ * 直接 indexOf 会让 "6" 命中 "1967" 里的那一位：StatCard 的计数于是在
+ * 旁白报年份时就开始滚，等真正的"6 美元"说出来，数字早就不动了。
+ * 数字两侧都不能再挂着数字，否则就是更长数字串的一部分。
+ */
+const findNeedle = (hay: string, needle: string, from: number): number => {
+  let at = hay.indexOf(needle, from);
+  if (!isDigit(needle[0])) return at;
+  while (at !== -1) {
+    if (!isDigit(hay[at - 1]) && !isDigit(hay[at + needle.length])) return at;
+    at = hay.indexOf(needle, at + 1);
+  }
+  return -1;
+};
+
 /**
  * 把 `visual.words`（要上屏的词）对齐到 TTS 的词级时间戳上。
  *
@@ -116,8 +135,8 @@ export const resolveWordTimings = (
     const needle = norm(text) || text;
     let at = -1;
     for (const alias of aliasesFor(needle)) {
-      at = hay.indexOf(alias, cursor);
-      if (at === -1) at = hay.indexOf(alias);
+      at = findNeedle(hay, alias, cursor);
+      if (at === -1) at = findNeedle(hay, alias, 0);
       if (at !== -1) break;
     }
     if (at === -1) {

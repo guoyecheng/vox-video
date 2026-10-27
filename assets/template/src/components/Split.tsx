@@ -42,6 +42,18 @@ export const Split: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }>
     beat.durationInFrames,
   );
 
+  // 标题常常是"氮气加压"这种概括词，旁白里并不原样出现。这类格子如果交给
+  // resolveWordTimings 铺满整拍，第三格要到 3/4 处才落，前两秒画面几乎是空的。
+  // 所以：旁白里真的说到的标题用词级时间，其余按 0.8s 一格依次搭上去。
+  const flatNarration = beat.narration.replace(
+    /[\s，。！？；、,.!?;:：…—（）()《》〈〉「」『』“”‘’]/g,
+    "",
+  );
+  const staggered = panels.map((p, i) => {
+    const spoken = flatNarration.includes(p.title.replace(/\s/g, ""));
+    return spoken ? timings[i] : { t: i * 24, d: 12, text: p.title };
+  });
+
   const n = panels.length;
   // 3 格以内横排（更宽、更好读）；4 格以上转 2×2
   const cols = n <= 3 ? n : 2;
@@ -72,7 +84,7 @@ export const Split: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }>
       }}
     >
       {panels.map((p, i) => {
-        const pr = after(timings[i]?.t ?? 0, 18);
+        const pr = after(staggered[i]?.t ?? 0, 18);
         const tint = palette[i % palette.length];
 
         return (

@@ -18,6 +18,7 @@ import {
   useStage,
   resolveWordTimings,
 } from "./BeatPresence";
+import { PAPER, PaperSheet } from "../paper";
 
 type Note = {
   /** 目标点，画布百分比 */
@@ -160,18 +161,34 @@ export const Callout: React.FC<{ beat: Beat; visual: VisualSpec; accent: string 
       </div>
 
       {visual.caption ? (
+        // 说明压在照片上：照片底部常常是深色的（这里是一整片岩壁），
+        // 墨色字直接贴上去等于消失。给一张纸条，读作贴在照片上的标签。
         <div
           style={{
             position: "absolute",
-            left: pad,
-            bottom: 150,
-            fontFamily: FONT_BODY,
-            fontSize: 34,
-            fontWeight: 700,
-            color: COLORS.ink,
+            left: pad + 26,
+            bottom: 320,
+            transform: "rotate(-0.8deg)",
+            maxWidth: 780,
           }}
         >
-          {visual.caption}
+          <PaperSheet
+            seed={17}
+            color={PAPER.sheet}
+            contentStyle={{ padding: "10px 26px" }}
+          >
+            <div
+              style={{
+                fontFamily: FONT_BODY,
+                fontSize: 32,
+                fontWeight: 700,
+                color: COLORS.inkSoft,
+                lineHeight: 1.35,
+              }}
+            >
+              {visual.caption}
+            </div>
+          </PaperSheet>
         </div>
       ) : null}
     </div>
