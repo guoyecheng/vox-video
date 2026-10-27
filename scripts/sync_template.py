@@ -56,7 +56,7 @@ PRIVATE = {
 
 # 共享的顶层文件 / 目录
 SHARED_FILES = ["remotion.config.ts", "tsconfig.json", ".gitignore"]
-SHARED_DIRS = ["src", "public/fonts"]
+SHARED_DIRS = ["src", "public/fonts", "public/handwrite"]
 
 
 def is_private(rel: str) -> bool:

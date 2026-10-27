@@ -24,11 +24,13 @@ Remotion 渲染很慢（一条 60 秒的片子 3-8 分钟），而 `script.json`
 3. 旁白：非空；kinetic 的 words 必须按顺序出现在旁白里
 4. 素材：image / src / layers[].src 引用的文件在 public/ 下真的存在
 5. 图层：band / y / depth 的取值范围；给了 band 不给 y 会让层堆在底部
-6. 取值域：imageLayout / motion / layout / tile / impact / ambient / transition 这些枚举别写错
+6. 取值域：imageLayout / motion / layout / tile / impact / ambient / transition /
+   write（手写拍的字号/墨水色/速度）这些枚举别写错
 7. 批注：annotations 的 kind / 百分比坐标 / 字数 / 是否落进字幕带
 8. 纸片：tile 只对 kinetic / quote 生效；红纸整片最多一次
 9. 配图：全片至少 max(3, ceil(拍数/3)) 拍带配图（硬要求，不是提醒）
-10. 环境：字体文件在不在（缺了中文会静默回落雅黑）
+10. 变化清单：可选 `change` 字段若写了，进场/主动作/次要动作/出场四件事都要有
+11. 环境：字体文件在不在（缺了中文会静默回落雅黑）
 
 用法
 ----
@@ -50,7 +52,7 @@ from pathlib import Path
 KINDS = {
     "kinetic", "stat", "odometer", "quote", "highlight", "compare",
     "split", "timeline", "cards", "stack", "image", "person",
-    "route", "callout", "chart",
+    "route", "callout", "chart", "handwrite",
 }
 
 # 每种 kind 真正必须有的字段（缺了就是空拍或渲染报错）
@@ -60,7 +62,7 @@ REQUIRED = {
     "split": ["panels"], "timeline": ["milestones"],
     "cards": ["items"], "stack": ["items"], "image": ["src"],
     "person": ["name"], "route": ["points"], "callout": ["notes"],
-    "chart": ["data"],
+    "chart": ["data"], "handwrite": ["text"],
 }
 
 TRANSITIONS = {
@@ -83,6 +85,17 @@ ARCS = {
 IMPACTS = {"soft", "medium", "heavy"}
 AMBIENTS = {"off", "soft", "normal", "strong"}
 
+# 每拍变化清单（references/visual-craft.md）。可选字段，写了就四件事都要写全。
+# 中文键名照抄 dashi 的分镜表，英文键名给代码习惯的人用。
+CHANGE_KEYS = ("enter", "main", "secondary", "exit")
+CHANGE_ALIASES = {
+    "进场": "enter", "主动作": "main", "次要动作": "secondary", "出场": "exit",
+    "enter": "enter", "main": "main", "secondary": "secondary", "exit": "exit",
+}
+CHANGE_LABELS = {
+    "enter": "进场", "main": "主动作", "secondary": "次要动作", "exit": "出场",
+}
+
 # motion / layout 的兜底名单，优先从 src/timeline.ts 读（见 _enum_from_code）
 MOTION_RECIPES = {"stamp", "wipe", "rise", "flip", "build", "drift"}
 LAYOUT_MODES = {"center", "left-edge", "full-bleed", "split", "bottom-third"}
@@ -96,6 +109,7 @@ LAYOUT_SUPPORT = {
     "stat": {"left-edge", "bottom-third", "split", "full-bleed"},
     "quote": {"left-edge", "bottom-third", "full-bleed"},
     "cards": {"left-edge", "bottom-third"},
+    "handwrite": {"left-edge", "bottom-third"},
 }
 
 FONTS = ["public/fonts/NotoSansSC-VF.ttf", "public/fonts/ArchivoBlack-Regular.ttf"]
@@ -513,6 +527,30 @@ def check_stage3d(project: Path, rep: Report, where: str, visual: dict, narratio
                         rep.err(tw, f"{k} 应该是数字，现在是 {t.get(k)!r}")
 
 
+WRITE_COLORS = {"ink", "red"}
+
+
+def check_write(rep: Report, where: str, visual: dict) -> None:
+    """手写拍的 `write` 配置（字号 / 墨水色 / 速度）。"""
+    w = visual.get("write")
+    if w is None:
+        return
+    if not isinstance(w, dict):
+        rep.err(f"{where}.write", "不是一个对象")
+        return
+    size = w.get("size")
+    if size is not None and (not isinstance(size, (int, float)) or isinstance(size, bool)
+                             or not 48 <= size <= 240):
+        rep.err(f"{where}.write.size", f"字号是 48-240 的像素值，现在是 {size!r}")
+    color = w.get("color")
+    if color is not None and color not in WRITE_COLORS:
+        rep.err(f"{where}.write.color", f"只能是 {', '.join(sorted(WRITE_COLORS))}，现在 {color!r}")
+    speed = w.get("speed")
+    if speed is not None and (not isinstance(speed, (int, float)) or isinstance(speed, bool)
+                              or not 0.8 <= speed <= 12):
+        rep.err(f"{where}.write.speed", f"写字速度是 0.8-12 字/秒，现在是 {speed!r}")
+
+
 NOTE_KINDS = {"arrow", "circle", "measure", "tag", "stamp", "shape"}
 NOTE_SHAPES = {"square", "circle", "triangle", "reuleaux", "hex"}
 
@@ -631,6 +669,38 @@ def check_shots(where: str, visual: dict, motions: set[str], layouts: set[str],
             rep.err(f"{w}.words", "必须是字符串数组")
 
 
+def check_change(rep: Report, where: str, change) -> None:
+    """每拍变化清单：可选，但写了就不能缺项。
+
+    四件事缺一件，这一拍大概率会退化成"字摆好了等着"——尤其是缺主动作，
+    等于这一拍只有标题没有动作。写不出来就重想画面，不是把字段留空。
+    """
+    if change is None:
+        return
+    if not isinstance(change, dict):
+        rep.err(f"{where}.change", "必须是一个对象：{enter, main, secondary, exit}")
+        return
+    norm: dict[str, str] = {}
+    for key, val in change.items():
+        k = CHANGE_ALIASES.get(str(key))
+        if k is None:
+            rep.err(f"{where}.change.{key}",
+                    "不认识的键（只能是 进场/主动作/次要动作/出场，或 "
+                    "enter/main/secondary/exit）")
+            continue
+        if k in norm:
+            rep.err(f"{where}.change.{key}", f"和另一个键重复（都指向 {k}）")
+            continue
+        if not isinstance(val, str) or not val.strip():
+            rep.err(f"{where}.change.{key}", "不能为空——写清这一拍到底怎么动")
+            continue
+        norm[k] = val.strip()
+    missing = [CHANGE_LABELS[k] for k in CHANGE_KEYS if k not in norm]
+    if missing:
+        rep.err(f"{where}.change", f"缺 {', '.join(missing)}——四件事写全；"
+                                   "主动作写不出来就重想画面")
+
+
 def check_shot_fit(project: Path, rep: Report, beats: list) -> None:
     """有 timeline.json 时，核对显式镜的 from/to 没有越过这一拍的实测拍长。
 
@@ -701,6 +771,18 @@ def check_visual(project: Path, rep: Report, where: str, visual: dict, narration
         v = visual.get(f)
         if v is None or (isinstance(v, (list, dict, str)) and len(v) == 0):
             rep.err(where, f"kind '{kind}' 必须有 {f}")
+
+    if kind == "handwrite":
+        text = visual.get("text")
+        if isinstance(text, str):
+            lines = [ln for ln in text.split("\n") if ln.strip()]
+            longest = max((len(ln) for ln in lines), default=0)
+            if longest > 12:
+                rep.warn(where, f"最长一行 {longest} 字，字号会被压到 110 以下、"
+                                "笔也变小——拆成两行或删到 10 字以内")
+            if sum(len(ln) for ln in lines) > 40:
+                rep.warn(where, "整段超过 40 字，一拍写不完——手写拍适合一句短句")
+        check_write(rep, where, visual)
 
     if kind == "kinetic":
         words = visual.get("words")
@@ -893,6 +975,7 @@ def check_script(project: Path, rep: Report, kinds: set[str] | None = None,
             if isinstance(tf, int) and tf < 16:
                 rep.warn(where, f"paperCover 只给了 {tf} 帧——建议 16-20 帧，"
                                 "否则纸片还没落稳就切，会露出半屏内容")
+        check_change(rep, where, b.get("change"))
         check_visual(project, rep, where, b.get("visual") or {}, narration or "",
                      kinds, motions, layouts)
 

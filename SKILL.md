@@ -147,11 +147,11 @@ python "<skill>/scripts/stills.py" --project "<项目>" --sheet --tail
 - [第 2 步：写稿 + 分镜](#2-写稿--分镜--scriptjson) — 你唯一要手写的文件
 - [分镜节奏](#分镜节奏vox-的命门) — 多长一个 beat、什么时候换画面（弧库见 `references/arcs.md`）
 - [风格基线](#风格基线) — 只有五支颜色、三层纸、三种手势，**开工前先读**
-- [选视觉组件](#选视觉组件) — 15 个组件覆盖 90% 场景
+- [选视觉组件](#选视觉组件) — 16 个组件覆盖 90% 场景
 - [素材图（ComfyUI）](#素材图comfyui) — **强制**：每片都要配图；风格预设 + bake-off 选风格
 - [转场与特效](#转场与特效) — 别让整片一个节奏（运镜层 / 程序化特效）
 - [配乐](#配乐) — 配乐 + 按旁白自动让路（ducking）
-- [自检](#自检) — 单调 / 不同步都能自动查出来
+- [自检](#自检) — 单调 / 死拍 / 丰富度 / 不同步都能自动查出来
 - [渲染](#渲染)
 - [踩坑速查](#踩坑速查)
 - 参考文件
@@ -229,6 +229,24 @@ npm run preflight          # 等价于 python "<skill>/scripts/preflight.py" --p
 `motion` 别连写同一个——自动轮换不会重复，`check_rhythm` 报"相邻重复"一定是手写写重了。
 挑几拍写 `layout`（尤其 stat 的 `split`、长文的 `left-edge`），整片都是居中卡片就是 PPT。
 `elementMotion` 已降级为自由备注，不再影响渲染。
+
+### 每拍变化清单（`change`，可选）
+
+`change` 是写稿时逼自己想清楚"这一拍到底在演什么"的四件事，**不参与渲染**；
+写了 `preflight` 就要求四项齐全（中英文键名都认）：
+
+```jsonc
+"change": {
+  "enter": "标题纸片从上方落下，落定回正",
+  "main": "念到「土木堡」时红章砸下、数字从 20 万跳到 50 万",
+  "secondary": "底纸网点缓慢爬移，左上角小人眨眼",
+  "exit": "纸片盖屏，切到下一拍"
+}
+```
+
+主动作写不出来，就说明这一拍只是把字摆好了——重想画面，别把字段留空。
+变化频率、次要动作幅度、抽象概念→现有组件的映射表见
+**`references/visual-craft.md`**。
 
 ### 镜头拆分（`visual.shots`）
 
@@ -414,6 +432,9 @@ VOX 视频看着"信息密度高"，本质是**剪辑节奏快**。60 秒的片�
 - **`rate` 默认 `+12%`**。中文 TTS 默认语速对解说视频偏慢，加 10-15% 才有 VOX 那种紧凑感。超过 `+20%` 中文会开始吞字。
 - **无声 beat 是合法的**（`narration: ""`）。纯视觉留白（比如放一张图配环境音）节奏上很有用。
 - **开头别铺垫。** 第一个 beat 直接给最反直觉的那个事实。
+- **每 2–3 秒要有一个看得见的新东西**（新元素进场、变形、换色、推近），每 3–5 秒
+  一次大变化；任何一段静止不超过 2 秒。写每拍 `change` 四件事，出片后用
+  `check_richness.py` 量——判据和实测见 **`references/visual-craft.md`**。
 
 ## 选视觉组件
 
@@ -434,6 +455,14 @@ VOX 视频看着"信息密度高"，本质是**剪辑节奏快**。60 秒的片�
 | `TimelineRail` | `timeline` | 按时间推进的历史、里程碑、流程 |
 | `CardStack` | `cards` | "三个原因"这类并列要点 |
 | `ImageCard` | `image` | 配图 + 说明文字（图片放 `public/img/`） |
+| `Handwrite` | `handwrite` | 一只手拿笔在纸上写。笔尖走到哪，字显到哪；适合"写下这句话"的誓词、定义、日期 |
+
+`handwrite` 的文字写在 `visual.text`，用 `\n` 换行；`write.size`（字号，默认 150）、
+`write.color`（`ink` 钢笔 / `red` 红笔）、`write.speed`（字/秒，默认 3.2）可调。
+**一拍只写一句短话**：单行超过 12 字字号会被压到 110 以下，手也跟着变小；
+`visual.emphasis` 里的词会用红笔写。手是一张剪纸手部素材（蓝杆钢笔、金箍、银色笔尖，
+随模板自带 `public/handwrite/hand.png`），剪到手腕为止、不画手臂，起笔淡入、
+写完抬笔退场；它只挡在笔尖右上方还没写到的位置，所以文字右端离画幅右缘留一点空间。
 
 另有一层**常驻字幕轨** `CaptionTrack`，不由 `kind` 控制：`script.json` 里
 `"captions": true`（默认）就显示，跟着旁白逐句切换，不参与转场交叠。
@@ -463,7 +492,11 @@ VOX 视频看着"信息密度高"，本质是**剪辑节奏快**。60 秒的片�
 
 完整 props、字段和可调参数见 `references/components.md`。
 
-**"单调"几乎不是组件不够，而是没人管重复度。** 十五种组件摆在那里，
+选之前先查 **`references/visual-craft.md`** 第五节的「抽象概念 → 现有画面」：
+范围、累积、步骤、缺失这类概念分别该用哪种 kind、哪些是真缺口；字号和对比度
+的下限见 **`references/readability.md`**。
+
+**"单调"几乎不是组件不够，而是没人管重复度。** 十六种组件摆在那里，
 写稿时凭感觉挑，最后 `kinetic` 用六次、其中连续三次——整片一个节奏。
 `scripts/check_rhythm.py` 会把这件事变成可测的数字（见下）。
 
@@ -739,17 +772,20 @@ hook 句式见 `references/arcs.md`。
 
 ## 自检
 
-三个脚本：`check_rhythm.py` 在渲染前查脚本，`verify_sync.py` 和 `check_motion.py`
-在渲染后查成片。它们查的正是"肉眼看片最容易漏、也最难自查"的三件事。
+四个脚本：`check_rhythm.py` 在渲染前查脚本，`verify_sync.py`、`check_motion.py`
+和 `check_richness.py` 在渲染后查成片。它们查的正是"肉眼看片最容易漏、也最难自查"
+的几件事。
 
 ```bash
 python "<skill>/scripts/check_rhythm.py" --project "<项目>" --src "<模板 src>"
 python "<skill>/scripts/verify_sync.py" --project "<项目>"
 python "<skill>/scripts/check_motion.py" --project "<项目>" --baseline out/old.mp4
+python "<skill>/scripts/check_richness.py" --project "<项目>"
 ```
 
 **节奏**：视觉重复度（连续同款 / 单款占比 / 种类数）、转场重复、全画面冲击是否
-超预算、字号是否低于 1080p 可读下限、首拍是否像 hook。
+超预算、字号是否低于 1080p 可读下限、字幕是否低于 60px、主题色文字/背景的
+WCAG 对比度、首拍是否像 hook。字号与对比度的依据见 `references/readability.md`。
 
 **同步**：从 mp4 抽音轨与源 mp3 做包络互相关，逐拍输出误差，并区分**系统性偏移**
 （所有拍一致）和**抖动**（逐拍离散，才是真问题）。
@@ -764,6 +800,13 @@ python "<skill>/scripts/check_motion.py" --project "<项目>" --baseline out/old
 均差 <1.5 就是死拍。改版后加 `--baseline` 和旧版逐拍比，比盯绝对值灵敏。
 **"近乎静止占比"不要当 KPI**——它奖励噪声和颤动，60%-70% 属正常；确实要卡，
 显式加 `--strict`。
+
+**丰富度**：每 2.5 秒抽一格（裁掉底部字幕纸带），量相邻格的像素差。判定是
+**平均 ≥10 且没有"几乎没变"（<4）的对**；另报在动帧占比和最长静止（>2 秒提醒）。
+输出 `out/richness/richness.txt` + 联络表 `sheet.png`，标了 `FLAT` 的格就是要补变化
+的地方。阈值在纸艺片上复核过：`ming-ep01` 平均 34.8、0/25 对几乎没变；
+`demo-film` 5/15 对几乎没变——这就是"过了动效检查但看着单调"的样子。
+判据和补变化的方法见 `references/visual-craft.md`。
 
 > 实测数据、阈值推导和"软渐变为什么无效"见 `references/tuning.md`。
 
@@ -836,8 +879,10 @@ npx remotion render VoxVideo out/cover.png --frame=45   # 抽一帧做封面
 ## 参考文件
 
 - `references/style.md` — 风格基线：五色表、三层纸舞台、组件语法、字号字距、动效表、禁用清单
-- `references/components.md` — 15 个组件的完整 props、转场选型、特效层、运镜层、入场配方、版式变体与镜头拆分、配乐床
+- `references/components.md` — 16 个组件的完整 props、转场选型、特效层、运镜层、入场配方、版式变体与镜头拆分、配乐床
 - `references/arcs.md` — 叙事弧库、拍数数字表、hook 句式库、三根杆的词表、反单调清单
+- `references/visual-craft.md` — 每拍变化清单（进场/主动作/次要动作/出场）、变化频率、抽象概念→画面映射、丰富度判据
+- `references/readability.md` — 字号下限、WCAG 对比度、字幕安全区、停留时间（全部带出处）
 - `references/comfyui.md` — ComfyUI 出图：模型清单、工作流格式、XPU 已知问题
 - `references/tuning.md` — 实测参数与调优记录：死拍阈值、推近上限、分层收益、同步精度
 - `references/troubleshooting.md` — 渲染报错、字体、音画不同步的完整排查
@@ -874,8 +919,9 @@ python "<skill>/scripts/sync_template.py" --project "<项目>" --pull --force  #
 | `scripts/preflight.py` | 配音**之前** | 查 script.json 的错：id 重复、kind 拼错、图不存在、**配图拍数不够**、层少 `y`、枚举值写错、字体缺失、stage3d 坐标与依赖 |
 | `scripts/vox_tts.py` | 闸门 A 之后 | 合成配音 + 生成 `src/timeline.json`（帧数由音频实测推导） |
 | `scripts/stills.py` | 闸门 0（效果图）/ 闸门 B（渲染之前） | 按 beat 抽关键帧 + 联络表；`sheet.png` 直接发用户，`sheet.html` 可放大看标签 |
-| `scripts/check_rhythm.py` | 闸门 B 之前 | 查节奏单调、字号太小、类 CSS 动画 |
+| `scripts/check_rhythm.py` | 闸门 B 之前 | 查节奏单调、字号/字幕下限、WCAG 对比度、类 CSS 动画 |
 | `scripts/check_motion.py` | 渲染之后 | 逐拍均差、九宫格、静止占比；`--baseline` 跟旧版逐拍对比 |
+| `scripts/check_richness.py` | 渲染之后 | 每 2.5 秒抽格：相邻格变化、几乎没变的接缝、在动帧、最长静止 + 联络表 |
 | `scripts/verify_sync.py` | 渲染之后 | 音画同步（包络互相关），区分系统偏移和抖动 |
 | `scripts/comfy_gen.py` | 闸门 0 + 每片出图（强制） | 出配图；`--check` 先自检服务与模型，`--dry-run` 给用户过提示词 |
 | `scripts/bakeoff.py` | 定"看的层"之前 | 同一条 brief 按多套风格各出一张 + HTML 对比表，人来挑 |
@@ -893,5 +939,6 @@ npm run tts                                        # 2 配音 + 时间轴（闸�
 python scripts/stills.py --project . --sheet --tail   # 3 抽关键帧（闸门 B，发图等确认）
 npm run render                                     # 4 整片（确认之后）
 python scripts/check_motion.py --project . --baseline out/old.mp4   # 5 体检
-python scripts/verify_sync.py --project .          # 6 同步校验
+python scripts/check_richness.py --project .       # 6 丰富度（每 2.5 秒一格）
+python scripts/verify_sync.py --project .          # 7 同步校验
 ```

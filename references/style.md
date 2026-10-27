@@ -86,6 +86,7 @@
 | 数字跳动 | 0 → 目标，easeOutCubic，0.9s，卡在旁白念到数字 | `StatCard` / `Odometer` |
 | 红笔划线 | 8 帧从左划到右 | `BrushUnderline` |
 | 批注画入 | 12-14 帧沿路径长出去 | `NoteLayer`（`annotations`） |
+| 手写 | 逐字显影 + 笔尖跟随，默认 3.2 字/秒 | `Handwrite`（`handwrite`） |
 | 横向缓移 | 2%-3% 画幅，全程匀速 | `camera: "pan"` / `ambient` |
 | 底纹漂移 | 地图 12px/160 帧、网点 5px/秒 | `PaperStage` |
 
@@ -103,5 +104,6 @@
 | 强调词 | `src/components/KineticText.tsx` |
 | 对比双栏 + 图形 | `src/components/CompareSplit.tsx` |
 | 手绘批注 | `src/components/NoteLayer.tsx`（`annotations`） |
+| 手写拍 | `src/components/Handwrite.tsx`（`handwrite`） |
 | 抠图印刷化 | `src/components/CutoutLayer.tsx`（`print: true`） |
 | 入场/常驻/运镜 | `src/effects.tsx` |

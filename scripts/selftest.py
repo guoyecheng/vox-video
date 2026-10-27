@@ -23,6 +23,7 @@ TEMPLATE = ROOT / "assets" / "template"
 sys.path.insert(0, str(SCRIPTS))
 
 import check_rhythm  # noqa: E402
+import check_richness  # noqa: E402
 import preflight  # noqa: E402
 import _media  # noqa: E402
 
@@ -153,7 +154,7 @@ def test_layout_support_matches_components() -> str:
     support = preflight.LAYOUT_SUPPORT
     assert set(support) <= preflight.KINDS, f"矩阵里有不认识的 kind：{set(support) - preflight.KINDS}"
     files = {"kinetic": "KineticText", "stat": "StatCard",
-             "quote": "QuoteCard", "cards": "CardStack"}
+             "quote": "QuoteCard", "cards": "CardStack", "handwrite": "Handwrite"}
     for kind, modes in support.items():
         assert modes <= preflight.LAYOUT_MODES, f"{kind} 的变体有非法值：{modes - preflight.LAYOUT_MODES}"
         txt = (TEMPLATE / "src" / "components" / f"{files[kind]}.tsx").read_text(encoding="utf-8")
@@ -262,6 +263,63 @@ def test_annotations_wired_and_validated() -> str:
     low = {"kind": "stat", "value": 1, "annotations": [{"kind": "stamp", "x": 50, "y": 90, "text": "结论"}]}
     assert any("字幕带" in w for w in run(low).warns), "落进字幕带没给警告"
     return "类型/组件/接线/校验一致"
+
+
+def test_handwrite_wired_and_validated() -> str:
+    """handwrite：类型 → 组件 → 注册 → preflight 校验，四处对上。"""
+    declared = preflight._enum_from_code(TEMPLATE, "VisualKind") or set()
+    assert "handwrite" in declared and "handwrite" in preflight.KINDS, \
+        "handwrite 没同时出现在 VisualKind 和 preflight.KINDS"
+
+    timeline = (TEMPLATE / "src" / "timeline.ts").read_text(encoding="utf-8")
+    for needle in ("export type WriteSpec", "write?: WriteSpec", '"handwrite"'):
+        assert needle in timeline, f"timeline.ts 缺 {needle}"
+
+    comp = TEMPLATE / "src" / "components" / "Handwrite.tsx"
+    assert comp.exists(), "缺 Handwrite.tsx"
+    src = comp.read_text(encoding="utf-8")
+    # 逐字显影、笔尖跟随、手形、换行抬笔——少一个就不是"写字"
+    for needle in ("PaperHand", "hotIndices", "perChar", "visual.write",
+                   "opacity: p", "cross", "charWidth"):
+        assert needle in src, f"Handwrite.tsx 缺 {needle}"
+    # 手部素材：组件 staticFile 引用它，图片丢了渲染会 404
+    assert "staticFile" in src, "Handwrite.tsx 没引用 staticFile 手部素材"
+    asset = TEMPLATE / "public" / "handwrite" / "hand.png"
+    assert asset.exists(), "缺手部素材 public/handwrite/hand.png"
+
+    visuals = (TEMPLATE / "src" / "visuals.tsx").read_text(encoding="utf-8")
+    assert "handwrite: Handwrite" in visuals, "visuals.tsx 没注册 handwrite"
+    index = (TEMPLATE / "src" / "components" / "index.ts").read_text(encoding="utf-8")
+    assert 'export { Handwrite }' in index, "components/index.ts 没导出 Handwrite"
+
+    kinds = preflight.kinds_from_code(TEMPLATE) or preflight.KINDS
+    motions = preflight.motions_from_code(TEMPLATE) or preflight.MOTION_RECIPES
+    layouts = preflight.layouts_from_code(TEMPLATE) or preflight.LAYOUT_MODES
+
+    def run(visual: dict):
+        rep = preflight.Report()
+        preflight.check_visual(Path("."), rep, "beat0", visual, "我们不再退。",
+                               kinds, motions, layouts)
+        return rep
+
+    good = {"kind": "handwrite", "text": "这一次，\n我们不再退。",
+            "emphasis": ["不再退"], "layout": "left-edge",
+            "write": {"size": 150, "color": "red", "speed": 3.2}}
+    rep = run(good)
+    assert not rep.errors, f"合法 handwrite 被误报：{rep.errors}"
+    assert not [w for w in rep.warns if "layout" in w], f"handwrite 的 layout 没接上：{rep.warns}"
+
+    errs = run({"kind": "handwrite"}).errors
+    assert any("text" in e for e in errs), f"缺 text 没报错：{errs}"
+
+    errs = run({"kind": "handwrite", "text": "写一句",
+                "write": {"size": 900, "color": "blue", "speed": 0}}).errors
+    for key in ("size", "color", "speed"):
+        assert any(key in e for e in errs), f"非法 write.{key} 没报错：{errs}"
+
+    warns = run({"kind": "handwrite", "text": "这是一句明显超过十二个字的手写长句"}).warns
+    assert any("字" in w for w in warns), f"过长的手写句没提醒：{warns}"
+    return "类型/组件/注册/校验一致"
 
 
 def test_stage3d_wired_and_validated() -> str:
@@ -518,6 +576,84 @@ def test_check_rhythm_shot_adjacency() -> str:
     _, problems = check_rhythm.check_motion_variety(beats)
     assert not problems, f"shots 拍的拍级相邻误报：{problems}"
     return "镜头级相邻检测"
+
+
+def test_contrast_audit() -> str:
+    """对比度审计要读得到 theme 色板，且五色板当前组合全过；改坏要报。"""
+    colors = check_rhythm.theme_colors(TEMPLATE / "src")
+    assert colors, "读不到 theme.ts 的 COLORS"
+    _, problems = check_rhythm.contrast_audit(colors)
+    assert not problems, f"模板色板不该有对比度错误：{problems}"
+
+    bad = dict(colors)
+    bad["ink"] = colors["paper"]  # 1:1，必然不够
+    _, problems = check_rhythm.contrast_audit(bad)
+    assert any("对比度不足" in p for p in problems), "调色板改坏没报"
+    assert abs(check_rhythm.contrast_ratio("#000000", "#FFFFFF") - 21) < 0.02
+    return f"{len(colors)} 支颜色 / 算法校准"
+
+
+def test_caption_size_floor() -> str:
+    """字幕 60px 是单独一条线，不能和辅助文字共用 32px 的下限。"""
+    _, problems = check_rhythm.check_caption_size(TEMPLATE / "src")
+    assert not problems, f"模板字幕不该低于 60px：{problems}"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "src"
+        (src / "components").mkdir(parents=True)
+        (src / "components" / "CaptionTrack.tsx").write_text(
+            "fontSize: 56,\n", encoding="utf-8")
+        _, problems = check_rhythm.check_caption_size(src)
+        assert problems, "56px 字幕没报"
+        assert "60" in problems[0]
+    return "60px 单独卡"
+
+
+def test_preflight_validates_change() -> str:
+    """change 可选；写了就四件事齐全，中英文键名都认。"""
+    good = {"enter": "落下", "main": "盖章", "secondary": "网点爬移", "exit": "盖屏"}
+    rep = preflight.Report()
+    preflight.check_change(rep, "b1", good)
+    assert not rep.errors, rep.errors
+
+    cn = {"进场": "落下", "主动作": "盖章", "次要动作": "网点爬移", "出场": "盖屏"}
+    rep = preflight.Report()
+    preflight.check_change(rep, "b2", cn)
+    assert not rep.errors, f"中文键名被误报：{rep.errors}"
+
+    rep = preflight.Report()
+    preflight.check_change(rep, "b3", {"enter": "落下", "secondary": "网点"})
+    assert any("主动作" in e for e in rep.errors), "缺主动作没报"
+
+    rep = preflight.Report()
+    preflight.check_change(rep, "b4", "落下")
+    assert rep.errors, "非对象没报"
+
+    rep = preflight.Report()
+    preflight.check_change(rep, "b5", {**good, "结尾": "切"})
+    assert any("不认识的键" in e for e in rep.errors), "未知键没报"
+    return "四项齐全 / 中英键名"
+
+
+def test_richness_metrics() -> str:
+    """丰富度的三个读数：帧差、在动占比、最长静止、相邻格判定。"""
+    assert check_richness.frame_diff(b"\x00\x00", b"\x0a\x14") == 15.0
+
+    # 25 帧全灰、后 25 帧全白：每 2.5 秒一格，第 2 格差 100
+    frames = [b"\x00"] * 25 + [b"\x64"] * 25
+    diffs = check_richness.grid_diffs(frames, 2.5)
+    assert len(diffs) == 1 and abs(diffs[0][1] - 100) < 1e-6, diffs
+
+    ok, avg, flat, _ = check_richness.verdict([12.0, 11.0])
+    assert ok and flat == 0 and abs(avg - 11.5) < 1e-6
+    assert not check_richness.verdict([12.0, 3.0])[0], "几乎没变应判不过"
+    assert not check_richness.verdict([9.0, 9.0])[0], "平均不够应判不过"
+
+    # 帧 0/1 相同、帧 2/3 变化：静止 0.2 秒，从 0 秒起
+    moving, longest, at = check_richness.motion_stats(
+        [b"\x00", b"\x00", b"\x00", b"\x32"])
+    assert abs(moving - 100 / 3) < 1e-6 and abs(longest - 0.2) < 1e-6 and at == 0.0
+    return "帧差 / 静止段 / 判定"
 
 
 def test_node_shot_suite() -> str:
@@ -778,6 +914,10 @@ TESTS = [
     test_preflight_validates_shots,
     test_preflight_shot_fit,
     test_check_rhythm_shot_adjacency,
+    test_contrast_audit,
+    test_caption_size_floor,
+    test_preflight_validates_change,
+    test_richness_metrics,
     test_auto_rotation_never_repeats_adjacent,
     test_motion_variety_detects_repeats,
     test_layout_support_matches_components,
@@ -795,6 +935,7 @@ TESTS = [
     test_cutout_keying_keeps_enclosed_colors,
     test_cutouts_wired_and_validated,
     test_annotations_wired_and_validated,
+    test_handwrite_wired_and_validated,
     test_stage3d_wired_and_validated,
     test_doc_paths_exist,
     test_doc_anchors_resolve,

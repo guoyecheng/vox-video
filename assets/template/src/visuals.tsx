@@ -23,6 +23,7 @@ import {
   Chart,
   CompareSplit,
   CutoutLayer,
+  Handwrite,
   Highlight,
   ImageCard,
   KineticText,
@@ -66,6 +67,7 @@ const REGISTRY: Record<VisualKind, FC<VisualProps>> = {
   route: Route,
   callout: Callout,
   chart: Chart,
+  handwrite: Handwrite,
 };
 
 /** 开场和引述拍压深色底，明暗的切换本身就是节奏 */

@@ -30,7 +30,8 @@ export type VisualKind =
   | "person"
   | "route"
   | "callout"
-  | "chart";
+  | "chart"
+  | "handwrite";
 
 /**
  * 运镜（轴一：整幅怎么动）。
@@ -234,6 +235,21 @@ export type PieceSpec = {
 
 export type RoutePoint = { x: number; y: number; label: string; detail?: string };
 
+/**
+ * 手写拍的可调项。文字本身用 `visual.text`，用 `\n` 换行。
+ *
+ * 默认值按 1080p 的观看距离定：字号 150 是该拍的主视觉，速度 3.2 字/秒
+ * 接近真人写字（2-5 字/秒）。拍短写不完时组件会自动加速，不会拖出拍尾。
+ */
+export type WriteSpec = {
+  /** 字号 px，默认 150；放不下会自动缩，不会小于 64 */
+  size?: number;
+  /** 墨水色：ink 普通钢笔，red 红笔（和批注同一支） */
+  color?: "ink" | "red";
+  /** 写字速度，字/秒，默认 3.2 */
+  speed?: number;
+};
+
 /* ---------------- 抠图元素（cutouts） ---------------- */
 
 /** 抠图元素的入场动作。比 MotionRecipe 多一个 drop：纸片元素适合"落下来"。 */
@@ -428,6 +444,8 @@ export type VisualSpec = {
   camera?: CameraMove;
   /** 轴二：这一拍画面里什么在动（写给实现看的，也是反单调的检查项） */
   elementMotion?: string;
+  /** handwrite：字号 / 墨水色 / 写字速度 */
+  write?: WriteSpec;
   /** 入场配方。不写按拍序自动轮换，见 MotionRecipe */
   motion?: MotionRecipe;
   /** 版式变体。不写用组件默认，见 LayoutMode */

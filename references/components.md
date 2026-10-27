@@ -1,6 +1,6 @@
 # 组件参考
 
-15 个视觉组件 + 常驻字幕轨 + 特效层 + 转场。每个组件接收 `{beat, visual, accent, tone}`，
+16 个视觉组件 + 常驻字幕轨 + 特效层 + 转场。每个组件接收 `{beat, visual, accent, tone}`，
 `beat` 里带词级时间戳，所以组件内部天然能把动画卡在旁白上。
 
 ## 目录
@@ -8,6 +8,7 @@
 - [Chart](#chart) · [Highlight](#highlight) · [Split](#split) · [Stack](#stack)
 - [Person](#person) · [Route](#route) · [Callout](#callout) · [QuoteCard](#quotecard)
 - [CompareSplit](#comparesplit) · [TimelineRail](#timelinerail) · [CardStack](#cardstack) · [ImageCard](#imagecard)
+- [Handwrite](#handwrite) — 手写拍
 - [CaptionTrack](#captiontrack) — 常驻字幕轨，不由 `kind` 控制
 - [背景与常驻件](#背景与常驻件) · [特效层](#特效层) · [运镜层](#运镜层camera) · [入场配方层](#入场配方层motion) · [版式变体](#版式变体layout) · [配乐床](#配乐床musictsx)
 - [3D 纸艺舞台](#3d-纸艺舞台stage3dtsx) · [碎片拼贴层](#碎片拼贴层piecestsx) · [抠图元素层](#抠图元素层cutoutlayertsx) · [红笔批注层](#红笔批注层notelayertsx)
@@ -75,6 +76,43 @@ TTS 的词级时间戳上。可以：
 **字号是算出来的，不是写死的**：同时满足宽（`maxWidth / 最长词组`）和
 高（`可用高度 / 总行高`）两个约束，夹在 56-104px。所以写一个 28 字的长句
 也不会冲出画幅——会自动缩到合适大小。
+
+## Handwrite
+
+`kind: "handwrite"` —— 一只手拿笔在纸上写字，笔尖走到哪，字显到哪。
+
+```jsonc
+{
+  "kind": "handwrite",
+  "text": "这一次，\n我们不再退。",   // \n 换行；一拍只写一句短话
+  "emphasis": ["不再退"],            // 这些字用红笔写
+  "write": { "size": 150, "color": "ink", "speed": 3.2 },
+  "align": "center",                  // 或 "left"
+  "layout": "center"                  // 也支持 left-edge / bottom-third
+}
+```
+
+**它是怎么"写"的**：不逐笔画（中文笔画要先解析字体轮廓，运行时做不到），
+而是逐字显影——每个字在笔尖经过它那一格的后 70% 里从模糊到清晰；笔尖位置
+由同一条时间轴反推，所以笔永远压在正在出现的字上。**不是整行淡入**，
+这是它和"标题 + 淡入"拉开差距的地方。
+
+换行时手抬一下再落到下一行行首；写完停笔、抬笔向右上退场。手是一张剪到手腕的
+剪纸素材（蓝杆钢笔、金箍、银色笔尖，随模板自带 `public/handwrite/hand.png`），
+**没有手臂**——手臂要从画面中间伸到画外，太长会横穿半张纸、压住字幕带。
+手和笔杆在笔尖的右上方，**已经写好的字不会被盖住**，挡住的只有还没写到的地方。
+
+**节奏**：默认 3.2 字/秒（真人 2-5 字/秒），起笔卡在旁白第一个词后 2 帧。
+拍短写不完会自动加速，最多 2 倍速；拍尾留 14 帧给抬笔退出。
+
+**字号**：默认 150px，按画幅宽高自动往下缩到放得下，下限 64px。单行超过 12 字
+字号会掉到 110 以下、手也跟着变小——超过就拆行，`preflight` 会提醒。
+
+**和字幕的关系**：手写是主视觉，字幕照常压在底部；文字块会自动避开字幕带
+（下边界 840px）。别把同一句话既写又念得太长，观众会两边都读。
+
+**`write.speed` 的边界**：0.8-12 字/秒，超范围 `preflight` 报错。低于 1 字/秒
+像在描红，高于 8 字/秒又不像手写——合法但极端的速度仍然要靠抽帧判断。
 
 ## StatCard
 
@@ -429,8 +467,8 @@ TTS 的词级时间戳上。可以：
 断句规则：句末标点（`。！？；…`）硬断；句内逗号只是**候选**断点，
 只有句子超过 16 字才在最近的逗号处断开，避免字幕一行拉太宽。
 
-字幕是**一张撕下来的纸**（`PAPER.sheet` + 毛边 + 网点），墨色 56px 粗体。
-不是深色圆角块——那是全片最像 PPT 的地方。
+字幕是**一张撕下来的纸**（`PAPER.sheet` + 毛边 + 网点），墨色 60px 粗体。
+不是深色圆角块——那是全片最像 PPT 的地方。字号与对比度依据见 `readability.md`。
 
 ---
 
@@ -738,8 +776,8 @@ blinkAt(frame, { period = 30, duty = 0.5, phase = 0, smooth = false })
 | 值 | 做法 | 适用 |
 |---|---|---|
 | `center` | 组件默认 | 全部 |
-| `left-edge` | 内容靠左缘排版 | kinetic / stat / quote / cards |
-| `bottom-third` | 内容锚在画面下三分之一 | kinetic / stat / quote / cards |
+| `left-edge` | 内容靠左缘排版 | kinetic / stat / quote / cards / handwrite |
+| `bottom-third` | 内容锚在画面下三分之一 | kinetic / stat / quote / cards / handwrite |
 | `split` | 左右分栏：数字在左，标签在右 | 仅 stat |
 | `full-bleed` | 贴边排版，文字压图上（需要 `image`/`layers`） | kinetic / stat / quote |
 

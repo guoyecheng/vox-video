@@ -24,6 +24,7 @@ export { Person } from "./Person";
 export { Route } from "./Route";
 export { Callout } from "./Callout";
 export { Chart } from "./Chart";
+export { Handwrite } from "./Handwrite";
 export { CaptionTrack } from "./CaptionTrack";
 export { PieceLayer } from "./Pieces";
 export { CutoutLayer } from "./CutoutLayer";
