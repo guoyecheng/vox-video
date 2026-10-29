@@ -73,6 +73,10 @@ const REGISTRY: Record<VisualKind, FC<VisualProps>> = {
 /** 开场和引述拍压深色底，明暗的切换本身就是节奏 */
 const nightKinds = new Set<VisualKind>(["quote"]);
 
+/** 这一拍该用纸色还是夜色。转场的接缝颜色也取这个值，深色拍接新转场才不会闪米白。 */
+export const toneFor = (kind: VisualKind): "paper" | "night" =>
+  nightKinds.has(kind) ? "night" : "paper";
+
 export const accentFor = (index: number) => ACCENT_CYCLE[index % ACCENT_CYCLE.length];
 
 export const BeatVisual: React.FC<{
@@ -86,7 +90,7 @@ export const BeatVisual: React.FC<{
   const accent = accentFor(index);
   // 整片统一在"档案纸"上，只有引述拍落到暖墨黑。开场拍以前是深色，
   // 但风格板要求同一张纸底——深底会把拼贴语言打断。
-  const tone = nightKinds.has(beat.visual.kind) ? "night" : "paper";
+  const tone = toneFor(beat.visual.kind);
   const { pad } = useStage();
 
   // 镜头冲击落在这一拍第一个词上——旁白一开口，画面就"顶"一下

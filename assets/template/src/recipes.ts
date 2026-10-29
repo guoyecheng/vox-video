@@ -27,6 +27,14 @@ export const BUILDABLE_KINDS = new Set<VisualSpec["kind"]>([
 
 export const canBuildVisual = (v: VisualSpec) => BUILDABLE_KINDS.has(v.kind);
 
+/**
+ * 真能"把线画出来"的 kind：它们自己渲染 SVG 路径，读 `SvgDrawContext` 就能
+ * 让描边随进度生长。其余 kind 没有主描边，`draw` 只能退化成整体揭开。
+ */
+export const DRAWABLE_KINDS = new Set<VisualSpec["kind"]>(["route", "chart", "timeline", "highlight"]);
+
+export const canDrawVisual = (v: VisualSpec) => DRAWABLE_KINDS.has(v.kind);
+
 /** 无显式 motion 时的轮换值。相邻拍（含 wrap、含跨类切换）保证不同。 */
 export const autoMotion = (index: number, canBuild: boolean): MotionRecipe => {
   const recipe = ORDER[index % ORDER.length];

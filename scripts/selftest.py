@@ -685,6 +685,27 @@ def test_node_shot_suite() -> str:
     return r2.stdout.strip().splitlines()[-1]
 
 
+def test_svg_shell_wiring() -> str:
+    """SVG 外壳的三条硬约束：内容层是 SVG、遮罩 id 必须唯一、进度不能裸算。
+
+    注意：`<Sequence>` 包着 `<ShotLayer>`，所以它的 AbsoluteFill 是 `<svg>` 的父节点，
+    不是子节点——不需要 `layout="none"`。真正会炸的是把 svg 塞进另一个 svg，
+    所以这里断言 visuals.tsx 自己不画 svg。
+    """
+    visuals = (TEMPLATE / "src" / "visuals.tsx").read_text(encoding="utf-8")
+    assert "<svg" not in visuals, "内容层 SVG 外壳只能由 ShotLayer 出，visuals 里不能再套一层"
+    shot = (TEMPLATE / "src" / "ShotLayer.tsx").read_text(encoding="utf-8")
+    assert "SvgStage" in shot and "foreignObject" in shot, "ShotLayer 必须渲染 SVG 外壳"
+    assert "useSvgEntrance" in shot and "SvgDrawContext" in shot
+    assert "useEntrance" not in shot, "ShotLayer 已改用 SVG 入场，别再引旧 DOM 版"
+    motion = (TEMPLATE / "src" / "svg" / "motion.tsx").read_text(encoding="utf-8")
+    assert "useId" in motion, "遮罩 id 必须来自 useId，两个镜头同时挂载时不能撞"
+    assert "clamp01" in motion, "所有进度必须 clamp，空词流时不能出 NaN"
+    for bad in ("@keyframes", "animation:", "<animate"):
+        assert bad not in motion, f"motion.tsx 不允许 {bad}"
+    return "SVG 外壳接线"
+
+
 def test_svg_math_suite() -> str:
     """svg/math.ts 的 node 套件：撕缝互补、掀起归零、墨迹单调。"""
     import subprocess
@@ -954,6 +975,7 @@ TESTS = [
     test_every_script_guards_stderr,
     test_media_prefers_compositor_build,
     test_node_shot_suite,
+    test_svg_shell_wiring,
     test_svg_math_suite,
     test_word_alignment_suite,
     test_word_helpers_are_pure_module,

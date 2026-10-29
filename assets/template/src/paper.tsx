@@ -36,9 +36,10 @@ export const PAPER = {
 } as const;
 
 /** 确定性伪随机：同一 seed 永远同一结果，渲染才能逐帧复现。
- *  实现住在 `svg/math.ts`（那边要能被 node 套件单独 bundle），这里只转出，
+ *  实现住在 `svg/math.ts`（那边要能被 node 套件单独 bundle），这里转出，
  *  所有 `import { hash01 } from "../paper"` 的调用点不受影响。 */
-export { hash01 } from "./svg/math";
+import { hash01 } from "./svg/math";
+export { hash01 };
 
 /** 纸片该歪多少度。±amp 以内，太小看不出，超过 1.2° 会读成"放歪了" */
 export const tiltFor = (seed: number, amp = 0.6) => (hash01(seed) - 0.5) * 2 * amp;
