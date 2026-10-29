@@ -685,6 +685,34 @@ def test_node_shot_suite() -> str:
     return r2.stdout.strip().splitlines()[-1]
 
 
+def test_svg_math_suite() -> str:
+    """svg/math.ts 的 node 套件：撕缝互补、掀起归零、墨迹单调。"""
+    import subprocess
+
+    tmp = Path(tempfile.mkdtemp(prefix="svgmath-"))
+    bundle = tmp / "math.bundle.mjs"
+    entry = TEMPLATE / "src" / "svg" / "math.ts"
+    try:
+        r = subprocess.run(
+            f'npx -y esbuild "{entry}" --bundle --format=esm "--outfile={bundle}"',
+            shell=True, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=180,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"    (esbuild 不可用，跳过 node 子套件：{e})")
+        return "跳过"
+    if r.returncode != 0:
+        print(f"    (esbuild 失败，跳过 node 子套件：{(r.stderr or '').strip()[:120]})")
+        return "跳过"
+    r2 = subprocess.run(
+        ["node", str(SCRIPTS / "svg_math_check.mjs"), str(bundle)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
+    )
+    if r2.returncode != 0:
+        raise AssertionError(f"svg math 套件失败：\n{r2.stdout}\n{r2.stderr}")
+    return r2.stdout.strip().splitlines()[-1]
+
+
 def test_word_alignment_suite() -> str:
     """resolveWordTimings 的 node 套件：上屏词与词流两侧都要剥标点。"""
     import subprocess
@@ -926,6 +954,7 @@ TESTS = [
     test_every_script_guards_stderr,
     test_media_prefers_compositor_build,
     test_node_shot_suite,
+    test_svg_math_suite,
     test_word_alignment_suite,
     test_word_helpers_are_pure_module,
     test_paper_tiles_wired,
