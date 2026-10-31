@@ -16,6 +16,7 @@ import type { Beat, VisualSpec } from "../timeline";
 import { useBeatPresence, useBeatWords, useStage } from "./BeatPresence";
 import { floatAt, LightSweep } from "../effects";
 import { PAPER, PaperSheet, sway } from "../paper";
+import { useSvgDraw } from "../svg/motion";
 
 const INSET = 0.1; // 导轨两端各留 10%，给首尾节点的文字留出空间
 const NODE = 24; // 节点直径
@@ -51,8 +52,11 @@ export const TimelineRail: React.FC<{ beat: Beat; visual: VisualSpec; accent: st
 const POP_SPAN = 14;
 const progressOf = (i: number) => after(timings[i]?.t ?? 0, POP_SPAN);
 const lastIdx = Math.max(1, items.length - 1);
+// 外壳的 draw 进度（没有 draw 时恒为 1）：导轨宽度再被它压一道，
+// 于是 `draw` 在这一拍的表现是"从 0 画到旁白当前位置"，而不是整条一次出现。
+const drawP = useSvgDraw();
 const railP = Math.min(
-  1,
+  drawP,
   items.reduce((m, _, i) => {
     const p = progressOf(i);
     if (p <= 0) return m;

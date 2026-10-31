@@ -20,6 +20,7 @@ import {
 } from "./BeatPresence";
 import { LightSweep, floatAt } from "../effects";
 import { PAPER, sway } from "../paper";
+import { useSvgDraw } from "../svg/motion";
 
 type Point = { x: number; y: number; label: string; detail?: string };
 
@@ -48,7 +49,13 @@ export const Route: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }>
 
   // 连线总长用节点数估算即可——只用于 dashoffset 的归一化
   const segCount = Math.max(1, points.length - 1);
-  const segP = points.reduce((m, _, i) => Math.max(m, (Math.max(0, i - 1) + progressOf(i)) / segCount), 0);
+  // 外壳的 draw 进度（没有 draw 时恒为 1，Math.min 不改变原值）。
+  // 点亮的节奏仍然由旁白驱动，draw 只把"整条路线画到哪"再压一道。
+  const drawP = useSvgDraw();
+  const segP = Math.min(
+    drawP,
+    points.reduce((m, _, i) => Math.max(m, (Math.max(0, i - 1) + progressOf(i)) / segCount), 0),
+  );
   const dash = 1000;
   const drawn = interpolate(segP, [0, 1], [0, dash], {
     extrapolateLeft: "clamp",

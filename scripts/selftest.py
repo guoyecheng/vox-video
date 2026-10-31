@@ -716,6 +716,22 @@ def test_drawable_kinds_match_rotation() -> str:
     return "draw 回退名单一致"
 
 
+def test_line_kinds_consume_draw() -> str:
+    """drawable 的四个组件必须真的读 draw 进度，否则 draw 只是换了个名字的 wipe。
+
+    这里不断言具体实现（Route 用 dashoffset、TimelineRail 用 width 百分比），
+    只断言两件事：组件订阅了 `useSvgDraw()`，并且拿到的进度确实流进了自己的
+    主进度变量——`useSvgDraw()` 返回 1 时 `Math.min` 是恒等，所以这不改变旧画面。
+    """
+    for name in ("Route", "Chart", "TimelineRail", "Highlight"):
+        txt = (TEMPLATE / "src" / "components" / f"{name}.tsx").read_text(encoding="utf-8")
+        assert "useSvgDraw" in txt, f"{name}.tsx 没接 useSvgDraw"
+        assert txt.count("drawP") >= 2, f"{name}.tsx 读了 useSvgDraw 但没用它夹进度"
+    shell = (TEMPLATE / "src" / "ShotLayer.tsx").read_text(encoding="utf-8")
+    assert "draw" in shell, "外壳必须把 draw 进度塞进 context"
+    return "四个线稿 kind 接上 draw"
+
+
 def test_svg_shell_wiring() -> str:
     """SVG 外壳的三条硬约束：内容层是 SVG、遮罩 id 必须唯一、进度不能裸算。
 
@@ -1023,6 +1039,7 @@ TESTS = [
     test_new_motion_never_animates_via_css,
     test_drawable_kinds_match_rotation,
     test_svg_transitions_registered,
+    test_line_kinds_consume_draw,
     test_svg_math_suite,
     test_word_alignment_suite,
     test_word_helpers_are_pure_module,

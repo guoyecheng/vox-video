@@ -15,6 +15,7 @@ import { COLORS } from "../theme";
 import { FONT_BODY, FONT_DISPLAY, FONT_NUMERAL } from "../fonts";
 import type { Beat, VisualSpec } from "../timeline";
 import { useBeatPresence, useBeatWords, useStage, resolveWordTimings } from "./BeatPresence";
+import { useSvgDraw } from "../svg/motion";
 
 export type ChartDatum = {
   label: string;
@@ -56,7 +57,10 @@ export const Chart: React.FC<{ beat: Beat; visual: VisualSpec; accent: string; t
     beat.words,
     beat.durationInFrames,
   );
-  const p = (i: number) => after(timings[i]?.t ?? 0, 18);
+  // 外壳的 draw 进度（没有 draw 时恒为 1）：柱子/折线仍然按旁白逐项长，
+  // draw 只把整幅的生长再压一道，用来做"笔尖从左边画过去"。
+  const drawP = useSvgDraw();
+  const p = (i: number) => Math.min(drawP, after(timings[i]?.t ?? 0, 18));
 
   const max = Math.max(...data.map((d) => d.value), 1);
   const plotH = Math.round(height * 0.44);

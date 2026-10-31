@@ -17,6 +17,7 @@ import { FONT_BODY, FONT_DISPLAY } from "../fonts";
 import type { Beat, VisualSpec } from "../timeline";
 import { BrushUnderline, roughEdge } from "../paper";
 import { useBeatPresence, useBeatWords, useStage, resolveWordTimings } from "./BeatPresence";
+import { useSvgDraw } from "../svg/motion";
 
 export const Highlight: React.FC<{ beat: Beat; visual: VisualSpec; accent: string }> = ({
   beat,
@@ -43,9 +44,11 @@ export const Highlight: React.FC<{ beat: Beat; visual: VisualSpec; accent: strin
   )[0];
   const at = probe?.t ?? 0;
 
-  // 划线段和圈注段各按自己的节奏进场：划线先起，圈注稍晚追上
-  const markOn = after(at, 22);
-  const ring = after(at + 10, 20);
+  // 划线段和圈注段各按自己的节奏进场：划线先起，圈注稍晚追上。
+  // 外壳的 draw 进度（没有 draw 时恒为 1）再压一道：draw 下记号是"被笔描出来"的。
+  const drawP = useSvgDraw();
+  const markOn = Math.min(drawP, after(at, 22));
+  const ring = Math.min(drawP, after(at + 10, 20));
 
   // 76px 时 22 个字刚好越过 maxWidth，末两个字会被挤到第二行（"表。"单独一行）。
   // 长句折行没关系，孤字不行——放不下就退一档。
