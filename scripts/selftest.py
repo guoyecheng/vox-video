@@ -737,6 +737,19 @@ def test_svg_shell_wiring() -> str:
     return "SVG 外壳接线"
 
 
+def test_svg_transitions_registered() -> str:
+    """四个新转场必须注册进查表，且颜色只能来自 context，不能写死纸色。"""
+    reg = (TEMPLATE / "src" / "transitions.ts").read_text(encoding="utf-8")
+    for name in ("tearWipe", "paperPeel", "inkBleed", "pathCut"):
+        assert name in reg, f"transitions.ts 没注册 {name}"
+    assert "SvgTransitionProps" in reg, "transitionFor 必须接收 tone/accent"
+    tr = (TEMPLATE / "src" / "svg" / "transitions.tsx").read_text(encoding="utf-8")
+    assert "PAPER.sheet" not in tr and "#F8F1E0" not in tr, "转场里不能写死纸色，深色拍会闪白"
+    vox = (TEMPLATE / "src" / "VoxVideo.tsx").read_text(encoding="utf-8")
+    assert "toneFor" in vox, "VoxVideo 必须把进入拍的 tone 传给转场"
+    return "四个转场注册且颜色跟拍"
+
+
 def test_svg_math_suite() -> str:
     """svg/math.ts 的 node 套件：撕缝互补、掀起归零、墨迹单调。"""
     import subprocess
@@ -1009,6 +1022,7 @@ TESTS = [
     test_svg_shell_wiring,
     test_new_motion_never_animates_via_css,
     test_drawable_kinds_match_rotation,
+    test_svg_transitions_registered,
     test_svg_math_suite,
     test_word_alignment_suite,
     test_word_helpers_are_pure_module,

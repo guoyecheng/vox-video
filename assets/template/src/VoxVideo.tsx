@@ -20,7 +20,7 @@ import { AbsoluteFill, Audio, Sequence, staticFile, useVideoConfig } from "remot
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
 import { BEATS, TIMELINE } from "./timeline";
 import { computeShots } from "./shots";
-import { BeatVisual } from "./visuals";
+import { BeatVisual, toneFor, accentFor } from "./visuals";
 import { CaptionTrack, ChapterProgress } from "./components";
 import { transitionFor } from "./transitions";
 import { Grain } from "./effects";
@@ -68,7 +68,11 @@ export const VoxVideo: React.FC = () => {
             nodes.push(
               <TransitionSeries.Transition
                 key={`t-${beat.id}`}
-                presentation={transitionFor(beat.transition, { width, height })}
+                presentation={transitionFor(beat.transition, { width, height }, {
+                  tone: toneFor(beat.visual.kind),
+                  accent: accentFor(i),
+                  seed: i + 1,
+                })}
                 timing={linearTiming({ durationInFrames: beat.transitionFrames })}
               />,
             );

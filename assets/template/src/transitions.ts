@@ -31,6 +31,8 @@ import { filmBurn } from "@remotion/transitions/film-burn";
 import { ripple } from "@remotion/transitions/ripple";
 import { none } from "@remotion/transitions/none";
 import { paperCover } from "./paperfx";
+import { inkBleed, paperPeel, pathCut, tearWipe } from "./svg/transitions";
+import type { SvgTransitionProps } from "./svg/transitions";
 
 /** 以 fade 的返回类型为基准。各 presentation 的 props 类型互不相同，
  *  统一收敛到这一个需要调用处无差别接受，故此处做一次 cast。 */
@@ -55,7 +57,26 @@ const REGISTRY = {
   ripple,
   /** 纸片盖屏：纸片掉下来盖满、换内容、再掉走。需要 18 帧左右才不赶 */
   paperCover,
+  /**
+   * 四个 SVG 纸艺转场：撕开 / 掀起 / 洇墨 / 切缝。
+   *
+   * 它们需要接缝颜色（`tone`）和种子，所以**不能**在 REGISTRY 里持有工厂——
+   * 这里只占一个名字让 preflight 认得出，真正的构造走下面的 SVG_TRANSITIONS。
+   */
+  tearWipe,
+  paperPeel,
+  inkBleed,
+  pathCut,
 } as unknown as Record<string, () => Presentation>;
+
+/**
+ * 需要 props 的 SVG 转场。`transitionFor` 在查 REGISTRY 之前先看这张表，
+ * 命中就用调用处传来的 tone / accent / seed 现场构造。
+ */
+const SVG_TRANSITIONS: Record<
+  string,
+  (p?: SvgTransitionProps) => TransitionPresentation<SvgTransitionProps>
+> = { tearWipe, paperPeel, inkBleed, pathCut };
 
 /** 常用别名，省得背 Remotion 的原始命名 */
 const ALIASES: Record<string, string> = {
@@ -82,8 +103,14 @@ const NEEDS_SIZE = new Set(["clockWipe", "iris"]);
 export const transitionFor = (
   name: string | undefined,
   size?: { width: number; height: number },
+  context?: SvgTransitionProps,
 ): Presentation => {
   const key = ALIASES[name ?? ""] ?? name ?? "fade";
+  const svg = SVG_TRANSITIONS[key];
+  if (svg) {
+    // 各 presentation 的 props 形状互不相同，统一到 fade 的返回类型只能放宽
+    return svg(context ?? {}) as unknown as Presentation;
+  }
   const factory = REGISTRY[key] ?? REGISTRY.fade;
   if (!NEEDS_SIZE.has(key)) {
     return factory();
@@ -101,3 +128,4 @@ export const transitionFor = (
 export const TRANSITION_NAMES = [...Object.keys(ALIASES), ...Object.keys(REGISTRY)];
 
 export type { TransitionPresentation };
+export type { SvgTransitionProps };
