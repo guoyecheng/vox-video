@@ -131,6 +131,10 @@ def test_auto_rotation_never_repeats_adjacent() -> str:
         assert all(a != b for a, b in zip(got, got[1:])), f"相邻重复：{got}"
     plain = check_rhythm.effective_motion([{"visual": {"kind": "image"}}] * 5)
     assert "build" not in plain, f"不可 build 的拍拿到了 build：{plain}"
+    # draw 的回退是 wipe：不可 draw 的 kind 连跑 16 拍也不能撞出相邻同值
+    plain16 = check_rhythm.effective_motion([{"visual": {"kind": "image"}}] * 16)
+    assert all(a != b for a, b in zip(plain16, plain16[1:])), f"draw 回退撞车：{plain16}"
+    assert "draw" not in plain16, f"不可 draw 的拍直接拿到了 draw：{plain16}"
     return "轮换相邻不同"
 
 
@@ -685,6 +689,33 @@ def test_node_shot_suite() -> str:
     return r2.stdout.strip().splitlines()[-1]
 
 
+def test_new_motion_never_animates_via_css() -> str:
+    """新动作必须全部帧驱动：源码里不许出现 SMIL 或 CSS 动画。
+
+    转场文件在 Task 4 才出现，这里见到才查——文件不存在不算通过，
+    但也不该让本任务永远红着。
+    """
+    names = ["motion.tsx"]
+    if (TEMPLATE / "src" / "svg" / "transitions.tsx").exists():
+        names.append("transitions.tsx")
+    for name in names:
+        txt = (TEMPLATE / "src" / "svg" / name).read_text(encoding="utf-8")
+        for bad in ("<animate", "<animateTransform", "<animateMotion", "@keyframes",
+                    "animation:", "transition:", "Math.random", "Date.now"):
+            assert bad not in txt, f"{name} 里出现 {bad}"
+    return f"无 SMIL / CSS 动画（{len(names)} 个文件）"
+
+
+def test_drawable_kinds_match_rotation() -> str:
+    txt = (TEMPLATE / "src" / "recipes.ts").read_text(encoding="utf-8")
+    assert '"stamp", "build", "tear", "wipe", "rise", "arc", "drift", "draw"' in txt, \
+        "ORDER 与设计不符（draw 必须在末位：它的回退是 wipe，间距 4 才不会相邻撞车）"
+    assert "DRAWABLE_KINDS" in txt and "canDrawVisual" in txt
+    assert check_rhythm.DRAWABLE_KINDS == {"route", "chart", "timeline", "highlight"}, \
+        f"draw 回退名单不一致：{check_rhythm.DRAWABLE_KINDS}"
+    return "draw 回退名单一致"
+
+
 def test_svg_shell_wiring() -> str:
     """SVG 外壳的三条硬约束：内容层是 SVG、遮罩 id 必须唯一、进度不能裸算。
 
@@ -976,6 +1007,8 @@ TESTS = [
     test_media_prefers_compositor_build,
     test_node_shot_suite,
     test_svg_shell_wiring,
+    test_new_motion_never_animates_via_css,
+    test_drawable_kinds_match_rotation,
     test_svg_math_suite,
     test_word_alignment_suite,
     test_word_helpers_are_pure_module,

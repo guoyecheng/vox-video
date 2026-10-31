@@ -21,7 +21,9 @@ const mod = await import(pathToFileURL(path.resolve(bundlePath)).href);
 const { computeShots } = mod;
 
 // 与 recipes.ts 的 ORDER 一致——bundle 里若换了表，这里的期望值会立刻对不上。
-const ORDER = ["stamp", "build", "wipe", "rise", "drift"];
+// kinetic 不可 draw，所以 draw 槽位在这里一律落成 wipe（与 autoMotion 的回退一致）。
+const ORDER = ["stamp", "build", "tear", "wipe", "rise", "arc", "drift", "draw"];
+const KINETIC_ORDER = ORDER.map((r) => (r === "draw" ? "wipe" : r));
 
 const beat = (visual, words, narration, durationInFrames = 120) => ({
   id: "b",
@@ -139,7 +141,7 @@ ok("显式 shots 逐字段", () => {
   assert.equal(shots[0].from, 0);
   assert.equal(shots[0].durationInFrames, 60);
   assert.equal(shots[0].transition, "crossfade");
-  assert.equal(shots[0].motion, ORDER[0]);
+  assert.equal(shots[0].motion, KINETIC_ORDER[0]);
   assert.equal(shots[0].layout, undefined);
   assert.equal(shots[0].shown, undefined);
   assert.equal(shots[1].from, 60);
@@ -192,7 +194,11 @@ ok("全局序号轮换相邻不重复", () => {
       const shots = computeShots(mk(specs), first, 30);
       assert.equal(shots.length, count);
       shots.forEach((s, i) => {
-        assert.equal(s.motion, ORDER[(first + i) % ORDER.length], `first=${first} 轮换错位`);
+        assert.equal(
+          s.motion,
+          KINETIC_ORDER[(first + i) % KINETIC_ORDER.length],
+          `first=${first} 轮换错位`,
+        );
       });
       for (let i = 0; i + 1 < shots.length; i++) {
         assert.notEqual(shots[i].motion, shots[i + 1].motion, `first=${first} 批内撞配方`);
@@ -210,7 +216,7 @@ ok("全局序号轮换相邻不重复", () => {
       30,
     );
     assert.equal(single.length, 1);
-    assert.equal(single[0].motion, ORDER[first % ORDER.length]);
+    assert.equal(single[0].motion, KINETIC_ORDER[first % KINETIC_ORDER.length]);
   }
 });
 

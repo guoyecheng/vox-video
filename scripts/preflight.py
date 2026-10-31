@@ -97,7 +97,8 @@ CHANGE_LABELS = {
 }
 
 # motion / layout 的兜底名单，优先从 src/timeline.ts 读（见 _enum_from_code）
-MOTION_RECIPES = {"stamp", "wipe", "rise", "flip", "build", "drift"}
+MOTION_RECIPES = {"stamp", "wipe", "rise", "flip", "build", "drift",
+                  "arc", "tear", "morph", "peel", "seal", "draw"}
 LAYOUT_MODES = {"center", "left-edge", "full-bleed", "split", "bottom-third"}
 # 强调词的纸片版式（src/components/PaperTile.tsx 的 TileVariant）
 TILE_VARIANTS = {"auto", "cut", "note", "clip", "label", "banner", "red"}
@@ -828,6 +829,12 @@ def check_visual(project: Path, rep: Report, where: str, visual: dict, narration
     motion = visual.get("motion")
     if motion is not None and motion not in motions:
         rep.err(f"{where}.motion", f"只能是 {', '.join(sorted(motions))}，现在 {motion}")
+    # 新动作的两个退化：不影响成片正确性，但写的人该知道实际看到的是什么
+    if motion == "draw" and kind not in {"route", "chart", "timeline", "highlight"}:
+        rep.warn(where, f"draw 在 kind '{kind}' 上会退化成 wipe"
+                        "（只有 route/chart/timeline/highlight 自己画描边）")
+    if motion == "morph":
+        rep.warn(where, "morph 在 v1 退化成 tear：纸片摊平要等内容层组件迁进 SVG")
     layout_mode = visual.get("layout")
     if layout_mode is not None and layout_mode not in layouts:
         rep.err(f"{where}.layout", f"只能是 {', '.join(sorted(layouts))}，现在 {layout_mode}")

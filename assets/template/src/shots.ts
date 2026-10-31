@@ -14,7 +14,7 @@ import type {
   ShotTransition,
   WordTiming,
 } from "./timeline";
-import { autoMotion, canBuildVisual } from "./recipes";
+import { autoMotion, canBuildVisual, canDrawVisual } from "./recipes";
 
 /** 镜头时长下限（秒）——短于这个的从句会被并进下一句 */
 export const MIN_SHOT_SECONDS = 1.5;
@@ -58,7 +58,7 @@ const singleShot = (beat: Beat, index: number): Shot => ({
   words: beat.words,
   narration: beat.narration,
   shown: beat.visual.words,
-  motion: beat.visual.motion ?? autoMotion(index, canBuildVisual(beat.visual)),
+  motion: beat.visual.motion ?? autoMotion(index, canBuildVisual(beat.visual), canDrawVisual(beat.visual)),
   layout: beat.visual.layout,
   transition: "cut",
 });
@@ -138,6 +138,7 @@ const autoShots = (
   firstShotIndex: number,
   fps: number,
   canBuild: boolean,
+  canDraw: boolean,
 ): Shot[] => {
   const words = beat.words ?? [];
   if (!words.length) return [singleShot(beat, firstShotIndex)];
@@ -188,7 +189,7 @@ const autoShots = (
           : null) ?? joined,
       // 多镜头下 beat 级 words 失效，词由 shot 级接管
       shown: undefined,
-      motion: autoMotion(firstShotIndex + i, canBuild),
+      motion: autoMotion(firstShotIndex + i, canBuild, canDraw),
       layout: beat.visual.layout,
       transition: "cut" as ShotTransition,
     };
@@ -202,6 +203,7 @@ const explicitShots = (
   firstShotIndex: number,
   fps: number,
   canBuild: boolean,
+  canDraw: boolean,
 ): Shot[] => {
   const duration = beat.durationInFrames;
   const toFrames = (s: number) => Math.round(s * fps);
@@ -255,7 +257,7 @@ const explicitShots = (
           windowWords.map((w) => w.text).join(""))
         : beat.narration,
       shown: spec.words,
-      motion: spec.motion ?? autoMotion(firstShotIndex + i, canBuild),
+      motion: spec.motion ?? autoMotion(firstShotIndex + i, canBuild, canDraw),
       layout: spec.layout ?? beat.visual.layout,
       transition: spec.transition ?? "cut",
     };
@@ -268,7 +270,7 @@ export const computeShots = (beat: Beat, firstShotIndex: number, fps: number): S
   if (visual.kind !== "kinetic") return [singleShot(beat, firstShotIndex)];
   const specs = visual.shots;
   if (!specs || !specs.length) {
-    return autoShots(beat, firstShotIndex, fps, canBuildVisual(visual));
+    return autoShots(beat, firstShotIndex, fps, canBuildVisual(visual), canDrawVisual(visual));
   }
-  return explicitShots(beat, specs, firstShotIndex, fps, canBuildVisual(visual));
+  return explicitShots(beat, specs, firstShotIndex, fps, canBuildVisual(visual), canDrawVisual(visual));
 };

@@ -144,16 +144,23 @@ def check_transitions(beats: list[dict]) -> tuple[list[str], list[str]]:
     return out, problems
 
 
-# 与 assets/template/src/components/BeatPresence.tsx 的 autoMotion 保持一致：
-# 不写 motion 的拍按拍序轮换，build 落在不可 build 的 kind 上时用 drift 顶替。
-ORDER = ["stamp", "build", "wipe", "rise", "drift"]
+# 与 assets/template/src/recipes.ts 的 ORDER / autoMotion 保持一致：
+# 不写 motion 的拍按拍序轮换；build 落在不可 build 的 kind 上用 drift 顶替，
+# draw 落在没有主描边的 kind 上用 wipe 顶替（draw 放末位就是为了让它和上一次
+# wipe 隔开 4 拍，连续十几拍不可 draw 也不会撞出相邻同值）。
+ORDER = ["stamp", "build", "tear", "wipe", "rise", "arc", "drift", "draw"]
 BUILDABLE_KINDS = {"kinetic", "stat", "odometer", "cards", "stack",
                    "compare", "split", "timeline", "chart", "callout", "route"}
+DRAWABLE_KINDS = {"route", "chart", "timeline", "highlight"}
 
 
 def _auto_recipe(cursor: int, kind: str | None) -> str:
     recipe = ORDER[cursor % len(ORDER)]
-    return "drift" if recipe == "build" and kind not in BUILDABLE_KINDS else recipe
+    if recipe == "build" and kind not in BUILDABLE_KINDS:
+        return "drift"
+    if recipe == "draw" and kind not in DRAWABLE_KINDS:
+        return "wipe"
+    return recipe
 
 
 def effective_motion(beats: list[dict]) -> list[str]:

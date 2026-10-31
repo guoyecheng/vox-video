@@ -17,7 +17,7 @@ import type { MotionRecipe, VisualSpec } from "./timeline";
  * 这里换成"build 落在不可 build 的拍上时用 drift 顶替"——枚举过所有相邻
  * 组合（同类相邻 / 跨类相邻 / 首尾 wrap），任意相邻都不同。
  */
-export const ORDER: MotionRecipe[] = ["stamp", "build", "wipe", "rise", "drift"];
+export const ORDER: MotionRecipe[] = ["stamp", "build", "tear", "wipe", "rise", "arc", "drift", "draw"];
 
 /** 内容逐项出现的 kind，配 build 配方；其余整幅成型的 kind 把 build 顶成 drift。 */
 export const BUILDABLE_KINDS = new Set<VisualSpec["kind"]>([
@@ -35,8 +35,20 @@ export const DRAWABLE_KINDS = new Set<VisualSpec["kind"]>(["route", "chart", "ti
 
 export const canDrawVisual = (v: VisualSpec) => DRAWABLE_KINDS.has(v.kind);
 
-/** 无显式 motion 时的轮换值。相邻拍（含 wrap、含跨类切换）保证不同。 */
-export const autoMotion = (index: number, canBuild: boolean): MotionRecipe => {
+/** 无显式 motion 时的轮换值。相邻拍（含 wrap、含跨类切换）保证不同。
+ *
+ * 两个回退：`build` 落在不可 build 的 kind 上 → `drift`；
+ * `draw` 落在没有主描边的 kind 上 → `wipe`。
+ * `draw` 放在末位正是为了让它的回退（`wipe`）与上一次 `wipe` 相隔 4 拍，
+ * 连续十几拍不可 draw 也不会撞出相邻同值。
+ */
+export const autoMotion = (
+  index: number,
+  canBuild: boolean,
+  canDraw: boolean,
+): MotionRecipe => {
   const recipe = ORDER[index % ORDER.length];
-  return !canBuild && recipe === "build" ? "drift" : recipe;
+  if (recipe === "build" && !canBuild) return "drift";
+  if (recipe === "draw" && !canDraw) return "wipe";
+  return recipe;
 };

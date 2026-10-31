@@ -28,6 +28,7 @@ const entranceOpacity = (recipe: MotionRecipe, f: number): number => {
     });
   switch (recipe) {
     case "stamp":
+    case "seal":
       return clamp(0, 4) * 0.15 + 0.85; // 0.85 → 1，4 帧，主看缩放过冲
     case "rise":
       return clamp(0, 12) * 0.8 + 0.2; // 升入配淡入，留 0.2 底防空帧
@@ -36,6 +37,12 @@ const entranceOpacity = (recipe: MotionRecipe, f: number): number => {
     case "wipe":
     case "flip":
     case "build":
+    // 这几个只有 SVG 外壳能表达，整拍不额外淡入（arc 自己的透明度在外壳里算）
+    case "arc":
+    case "tear":
+    case "morph":
+    case "peel":
+    case "draw":
       return 1; // 完全不做整体淡入：揭开/翻页/搭积木自带入场
   }
 };
@@ -81,6 +88,16 @@ export const useEntrance = (recipe: MotionRecipe): EntranceSpec => {
       });
       return { transform: `scale(${1.18 - 0.18 * s})`, transformOrigin: "50% 60%" };
     }
+    case "seal": {
+      // 旧 DOM 路径没有墨环，只保留 stamp 的压印动作
+      const s = spring({
+        frame,
+        fps: rate,
+        config: { damping: 11, stiffness: 180, mass: 0.8 },
+        durationInFrames: Math.round(rate * 0.55),
+      });
+      return { transform: `scale(${1.18 - 0.18 * s})`, transformOrigin: "50% 60%" };
+    }
     case "wipe":
       // inset(top) 从 100% 收到 0：可见区从下往上揭开
       return { clipPath: `inset(${(1 - easeOut(14)) * 100}% 0 0 0)` };
@@ -109,6 +126,14 @@ export const useEntrance = (recipe: MotionRecipe): EntranceSpec => {
       return { transform: `translateX(${-(1 - easeOut(8)) * 36}px)` };
     case "build":
       return {}; // 整幅不进厂，元素逐项按词卡点
+    // 弧线/撕裂/褶皱/掀纸/描线只有 SVG 外壳能表达。旧的 DOM 路径若被别处调用，
+    // 退化成"不进场"比抛错好——类型是穷尽的，这里必须给返回值。
+    case "arc":
+    case "tear":
+    case "morph":
+    case "peel":
+    case "draw":
+      return {};
   }
 };
 
