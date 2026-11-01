@@ -69,6 +69,7 @@
         "source": "IEEE 802.11",
         "impact": "medium",
         "layout": "split",
+        "motion": "arc",
         "annotations": [
           { "kind": "circle", "x": 33, "y": 48, "w": 520, "h": 340, "rot": -4, "at": 1.2 }
         ]
@@ -76,13 +77,14 @@
     },
     {
       "id": "quote",
-      "transition": "fade",
+      "transition": "tearWipe",
+      "transitionFrames": 20,
       "narration": "在一个住了两百户的公寓楼里，Wi-Fi 其实不是你的，是所有人的。",
       "visual": {
         "kind": "quote",
         "text": "在一个住了两百户的公寓楼里，Wi-Fi 其实不是你的，是所有人的。",
         "attribution": "无线网络工程师，访谈",
-        "motion": "flip"
+        "motion": "tear"
       }
     },
     {

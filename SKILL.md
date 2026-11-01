@@ -222,7 +222,7 @@ npm run preflight          # 等价于 python "<skill>/scripts/preflight.py" --p
 | 杆 | 字段 | 管什么 |
 |---|---|---|
 | 轴一 | `visual.camera` | 整幅怎么动：`push_in`/`pull_out`/`pan`/`tilt`/`parallax`/`whip`/`static` |
-| 轴二 | `visual.motion` | 内容怎么进场：`stamp`（盖章）/`wipe`（揭开）/`rise`（升起）/`flip`（翻页）/`build`（逐项搭）/`drift`（漂入）。**不写会按拍序自动轮换**（相邻拍保证不同），写错了手写值 |
+| 轴二 | `visual.motion` | 内容怎么进场：`stamp`（盖章）/`wipe`（揭开）/`rise`（升起）/`flip`（翻页）/`build`（逐项搭）/`drift`（漂入）/`tear`（撕开）/`arc`（沿弧线飞入）/`peel`（掀纸角）/`seal`（压印 + 墨环）/`morph`（褶皱摊平，v1 退化成 `tear`）/`draw`（自己画描边，只对 `route`/`chart`/`timeline`/`highlight` 有效）。**不写会按拍序自动轮换**（相邻拍保证不同），写错了手写值 |
 | 摆法 | `visual.layout` | 版式变体：`center`（默认）/`left-edge`/`bottom-third`/`split`（仅 stat）/`full-bleed`（需要 `image`）。不写一律是居中卡片 |
 
 只做轴一，画面还是死的；只做轴二，镜头是死的。**相邻两拍的 `camera` 不要重复。**
@@ -688,6 +688,10 @@ python scripts/bakeoff.py --project . --beat shot-hook   # → out/bakeoff/sheet
 | 翻到下一章 | `flip` / `bookFlip` |
 | 灾难、战乱、崩盘 | `filmBurn` / `ripple` |
 | 纸片盖住画面再换内容（保持拼贴质感） | `paperCover` + `transitionFrames: 18` |
+| 撕开一道口子换下一拍 | `tearWipe` + `transitionFrames: 18` |
+| 掀起纸角，露出下面的内容 | `paperPeel` + `transitionFrames: 20` |
+| 墨迹从一处洇开盖住旧拍 | `inkBleed` + `transitionFrames: 20` |
+| 一刀切开，新旧各占半边 | `pathCut` + `transitionFrames: 18` |
 | 同类型连续内容 | `none`（硬切比淡入淡出利落） |
 
 > **`dissolve` 不是"软溶解"。** Remotion 4.0.535 里它按**亮度**烧灼，平涂纸面亮度

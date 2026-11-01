@@ -749,25 +749,37 @@ blinkAt(frame, { period = 30, duty = 0.5, phase = 0, smooth = false })
 
 ## 入场配方层（`motion`）
 
-`visual.motion` 控制内容层**怎么进场**。实现分两半：`useEntrance` 出位移/裁剪
-（`src/components/BeatPresence.tsx`），`useBeatPresence` 按同一配方出进场透明度——
+`visual.motion` 控制内容层**怎么进场**。实现分两半：外壳 `useSvgEntrance`
+（`src/svg/motion.tsx`）出位移/裁剪/描边进度——内容层每拍包在一个
+`<svg>` + `<foreignObject>` 里，所以撕口、弧线、折角这些**形状**才画得出来；
 组件代码不用改，退场仍统一走 `outP` 淡出。
 
 | 配方 | 做法 | 透明度 |
 |---|---|---|
 | `stamp` | scale 1.18 → 1，spring 阻尼 11 过冲回弹 | 0.85 → 1（4 帧） |
-| `wipe` | `clip-path: inset(top)` 从下往上揭开（14 帧） | 不淡入 |
+| `wipe` | `<clipPath><rect>` 从下往上揭开（14 帧） | 不淡入 |
 | `rise` | translateY 56px → 0，spring | 12 帧淡入（底 0.2） |
-| `flip` | `perspective` + rotateY −16° → 0 | 不淡入 |
+| `flip` | 水平 `scaleX` 压缩 + 斜切 + 折痕阴影 | 不淡入 |
 | `build` | 整幅不做进场，元素按词卡点逐项出现 | 不淡入 |
 | `drift` | translateX −36px → 0 | 8 帧淡入（底 0.2） |
+| `tear` | 毛边多边形 clip 从下往上撕开，接缝压一条纸色细线 | 不淡入 |
+| `arc` | 沿二次贝塞尔从画外飞到落点，旋转跟随切线 | 不淡入 |
+| `peel` | 对角折线推进的 clip + 折痕阴影带 | 不淡入 |
+| `seal` | `stamp` + 放射墨环 `<circle>` + 短促抖动 | 0.85 → 1 |
+| `morph` | 纸片从褶皱多边形插值到毛边矩形 | 不淡入 |
+| `draw` | 外壳把进度塞进 `SvgDrawContext`，组件自己画主描边 | 不淡入 |
 
-- **不写 `motion` 按拍序自动轮换**：`stamp → build → wipe → rise → drift` 循环，
-  相邻拍（含首尾、含跨 kind）保证不同。`build` 落在不可 build 的 kind
-  （image/person/quote/highlight）上时自动换成 `drift`。
-- `flip` 不在轮换表里，想用必须手写。
+- **不写 `motion` 按拍序自动轮换**：`stamp → build → tear → wipe → rise → arc
+  → drift → draw` 循环，相邻拍（含首尾、含跨 kind）保证不同。`build` 落在不可
+  build 的 kind（image/person/quote/highlight）上时换成 `drift`；`draw` 落在没有
+  主描边的 kind 上换成 `wipe`（`draw` 放末位就是让这个回退和上一次 `wipe` 隔开 4 拍）。
+- `flip` / `seal` / `morph` / `peel` 不在轮换表里，想用必须手写。
 - `build` 依赖组件自己的逐项动画（词弹出、卡片落下、里程碑画线），
   kinetic/cards/timeline/route/chart 这些 kind 天然成立。
+- `draw` 只对 `route` / `chart` / `timeline` / `highlight` 是真画线——这四种组件
+  内部读 `useSvgDraw()` 把主进度夹住；其余 kind 没有可画的描边，退化成 `wipe`。
+- `morph` 在 v1 退化成 `tear`（幅度减半、时长 30 帧）：真正的"纸片皱→平"要等
+  `PaperTile` 自己迁进 SVG。`preflight` 会提醒这一条。
 
 ## 版式变体（`layout`）
 
@@ -1069,17 +1081,37 @@ volume(f) = gain × (1 − duck × 让路量(f)) × 淡入(f) × 淡出(f)
 所以转场纯属视觉决策，改它不会让旁白错位；但视觉时钟必须扣掉交叠帧
 （`cursor += dur - next_te`）。选型原则见 `SKILL.md` 的「转场与特效」。
 
-`transitions.ts` 暴露 17 种（Remotion 原生 20 种，未接入另外 4 种，另加 1 种自定义）：
+`transitions.ts` 暴露 21 种（Remotion 原生 20 种里接入 16 种 + 1 种纸片盖屏 +
+4 种 SVG 纸艺转场）：
 
 `none`（硬切）、`fade`、`dissolve`、`slide`、`pushCut`、`blurSlide`、`wipe`、
 `iris`、`clockWipe`、`flip`、`bookFlip`、`crossZoom`、`zoomInOut`、`dreamyZoom`、
-`filmBurn`、`ripple`、`paperCover`。
+`filmBurn`、`ripple`、`paperCover`、`tearWipe`、`paperPeel`、`inkBleed`、`pathCut`。
 
 别名：`default` → `fade`、`push` → `slide`、`cut` / `hard` → `none`、
 `book` → `bookFlip`、`burn` → `filmBurn`、`paper` → `paperCover`。
 
 `clockWipe` / `iris` 必须传画幅尺寸，否则 Remotion 4.0.535 会算出 `NaN` 半径并抛
 `Malformed path data`。模板的 `transitionFor()` 已统一从 `useVideoConfig()` 喂入。
+
+### 四个 SVG 纸艺转场（`tearWipe` / `paperPeel` / `inkBleed` / `pathCut`）
+
+区别在"纸本身在破裂"：裁切形状是算出来的多边形，不是把整块画面平移或透视。
+实现见 `src/svg/transitions.tsx`，注册在 `transitions.ts` 的 `SVG_TRANSITIONS`。
+
+| 名字 | 形状 | 建议帧数 | 适合 |
+|---|---|---|---|
+| `tearWipe` | 毛边接缝从下往上撕开，接缝压一条 2px 纸色线 | 18 | 换段落、换战场 |
+| `paperPeel` | 对角折线推进，折角三角填纸色 + 10px 折痕带 | 20 | 掀开一层、揭穿一件事 |
+| `inkBleed` | 墨团从偏左的圆心洇开（半径 = 角距，p=1 刚好盖满） | 20 | 结论、判决、黑场进 dark 拍 |
+| `pathCut` | 竖直接缝带 ±22px 抖动，进口在左、旧拍在右 | 18 | 一刀两断、前后对比 |
+
+- **颜色从 `passedProps.tone` 推**（`toneFor(kind)`）：`quote` 这类深色拍接缝用暖
+  墨黑，其余用纸面米棕。写死纸色会在明暗切换的接缝上闪一条白边。
+- 转场坐标用**画幅**（0..width），不跟内容层那圈 `STAGE_INFLATE` 走——转场在拍级，
+  盖的是整个画面。
+- `inkBleed` 只裁进入侧；退出侧不裁（新墨迹盖上来，给旧内容再加形状会露两层边）。
+- 种子来自拍序（`seed: i + 1`），所以同一接缝逐帧稳定，不同接缝形状不同。
 
 ### `paperCover` —— 纸片盖屏（自定义）
 

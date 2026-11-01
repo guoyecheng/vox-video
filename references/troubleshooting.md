@@ -150,6 +150,21 @@ python "<skill>/scripts/vox_tts.py" --project "<项目>" --force
 python "<skill>/scripts/vox_tts.py" --project "<项目>" --only hook
 ```
 
+### 某一拍整幅空白
+
+内容层现在包在每拍一个 `<svg>` + `<foreignObject>` 里。整拍空白通常是这几条：
+
+- 组件被塞进了**另一个 `<svg>`**（内容层外壳只能由 `ShotLayer` 出，
+  `visuals.tsx` 自己不能再画 `<svg>`）；嵌套 `<svg>` 里的 `<foreignObject>`
+  在某些 Chromium 版本里直接不渲染。
+- `<Sequence>` 外面多包了一层 `AbsoluteFill` 却没写 `layout="none"`，
+  `svg` 被当成块级元素占位，内容被推到画幅外。
+- 遮罩的 `clipPath` id 写死了：同一帧两个镜头同时挂载时，后一个的 `defs` 会把
+  前一个吃掉，看起来就是"这一拍没了"。id 必须走 `useId()`。
+
+`preflight` 的"新动作退化提醒"也算同类线索：写了 `draw` 但 kind 没有主描边时，
+它退化成 `wipe`；写了 `morph` 退化成 `tear`——画面不会空，但会和预期的动作不同。
+
 ### 数字滚到一半才念出来
 
 StatCard 的计数起点跟着旁白走。旁白把数字放在句尾时，滚动就没时间了。

@@ -732,6 +732,24 @@ def test_line_kinds_consume_draw() -> str:
     return "四个线稿 kind 接上 draw"
 
 
+def test_animation_scan_catches_smil() -> str:
+    """扫描必须真能抓到 SMIL 和 CSS 动画，而不是永远返回空。"""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d)
+        (src / "Bad.tsx").write_text(
+            '<svg><animate attributeName="x" /></svg>\n'
+            "const s = { animation: 'spin 1s', transition: 'all .3s' };\n",
+            encoding="utf-8",
+        )
+        _, problems = check_rhythm.check_no_timeline_animation(src)
+        assert len(problems) >= 3, f"漏报：{problems}"
+    _, clean = check_rhythm.check_no_timeline_animation(TEMPLATE / "src")
+    assert not clean, f"模板自己不该有动画违规：{clean}"
+    return "SMIL / CSS 动画扫描生效"
+
+
 def test_svg_shell_wiring() -> str:
     """SVG 外壳的三条硬约束：内容层是 SVG、遮罩 id 必须唯一、进度不能裸算。
 
@@ -1040,6 +1058,7 @@ TESTS = [
     test_drawable_kinds_match_rotation,
     test_svg_transitions_registered,
     test_line_kinds_consume_draw,
+    test_animation_scan_catches_smil,
     test_svg_math_suite,
     test_word_alignment_suite,
     test_word_helpers_are_pure_module,

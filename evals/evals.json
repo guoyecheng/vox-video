@@ -37,7 +37,7 @@
       "expectations": [
         "新增了组件文件，且已注册进 src/visuals.tsx 的 REGISTRY 并可被 visual.kind 引用",
         "新组件渲染出三个环节节点和它们之间的箭头连接",
-        "新组件内部的动画由 useCurrentFrame() 驱动（源码中不含 CSS transition/animation/@keyframes）",
+        "新组件内部的动作由帧号驱动（useCurrentFrame / spring / interpolate），源码中不含 CSS transition/animation/@keyframes 与 SMIL <animate*>",
         "新组件通过 resolveWordTimings 或 useBeatWords 与旁白词级时间戳关联，而不是纯按固定帧数",
         "原有组件未被破坏：整条视频能成功渲染出 mp4"
       ]
@@ -144,7 +144,7 @@
         "该拍 visual 里有 pieceBase 且没有同时写 image",
         "pieces 至少 2 块，各块 x/y/w/h 之和覆盖整个画幅（面积合计 1.0±0.01）",
         "pieces 每块都有合法 enter（fly_left/fly_right/fly_up/drop/slap/pop）和 at（拍内帧）",
-        "挖洞实现用的是 clip-path: path(evenodd, ...)，源码中没有 mask-image / maskImage 的 data-URI 写法",
+        "挖洞是逐帧算出来的几何（首帧洞的形状与碎片轮廓一致），不是把整张图做透明度渐变",
         "PieceLayer 根节点的 inset 用 STAGE_INFLATE 抵消 PaperStage 的底纸外扩",
         "块与块之间有 PAD 重叠（≥0.003），且投影在落位后归零",
         "只重渲染这一拍抽帧可见：首帧是挖了洞的底图，末帧是无缝的完整图",
@@ -189,6 +189,19 @@
         "images.json 存在，且每条配图都有可复现的 scene 提示词与 style_preset",
         "成片里没有斜纹占位板：所有 ImageCard/Callout 的 src 都指向 public/img 下真实存在的图",
         "preflight.py 通过（配图拍数达标的错误项不得出现）"
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "用现成模板做一条 40 秒左右的 VOX 风格短片，主题随便，但要求纸片像被撕开、沿弧线飞进来、纸角被掀起，不要那种元素直接淡入的效果。给我 mp4。",
+      "expected_output": "纸艺外观完整、且至少出现三种新动效（draw/tear/arc/peel/seal 中任意三种）的 mp4",
+      "files": [],
+      "expectations": [
+        "成片保留纸艺外观：米棕底纸、毛边纸片、投影、红笔强调仍在",
+        "成片里能肉眼看到至少三种来自 draw/tear/morph/arc/peel/seal 的动作，而不是全部 fade/scale",
+        "script.json 的 visual.motion 出现至少三个新配方值，且相邻拍不重复",
+        "src/ 下没有 @keyframes、CSS animation/transition、SMIL <animate*>（动画全部帧驱动）",
+        "同一帧重复渲染两次，PNG 哈希一致"
       ]
     }
   ]

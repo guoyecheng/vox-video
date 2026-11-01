@@ -465,6 +465,68 @@ def check_arc(beats: list[dict]) -> tuple[list[str], list[str]]:
     return out, problems
 
 
+ANIMATION_BANS = (
+    ("@keyframes", "@keyframes"),
+    ("animation:", "CSS animation"),
+    ("transition:", "CSS transition"),
+    ("<animate", "SMIL <animate"),
+    ("<animateTransform", "SMIL <animateTransform"),
+    ("<animateMotion", "SMIL <animateMotion"),
+    ("begin=", "SMIL begin="),
+)
+
+
+def _strip_ts_comments(text: str) -> str:
+    """把注释换成空格（保留换行，行号不错位）。
+
+    模板里到处写着"绝不用 CSS animation / @keyframes"这类说明文字，直接全文
+    匹配会把文档当成违规。注释里出现这些词是好事——它是规则本身。
+    """
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append("".join(ch if ch == "\n" else " " for ch in text[i:j]))
+            i = j
+        elif c == "/" and i + 1 < n and text[i + 1] == "/":
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def check_no_timeline_animation(src: Path) -> tuple[list[str], list[str]]:
+    """逐帧渲染的前提：动画只能来自 useCurrentFrame()，不能来自浏览器时钟。
+
+    SMIL / CSS 动画在 `remotion render` 的截帧路径里不被推进——同一帧渲两次会得到
+    两个不同结果，或者干脆停在起始状态。所以这里直接禁掉，不是风格偏好。
+    注释先被清空：注释里写规则名不算违规。
+    """
+    out, problems = [], []
+    hits = []
+    for f in sorted(src.rglob("*.tsx")):
+        text = _strip_ts_comments(f.read_text(encoding="utf-8"))
+        for token, label in ANIMATION_BANS:
+            for m in re.finditer(re.escape(token), text):
+                line = text[:m.start()].count("\n") + 1
+                hits.append(f"{f.name}:{line} {label}")
+    out.append(f"\n禁用动画（SMIL / CSS）：{len(hits)} 处")
+    for h in hits:
+        out.append(f"   {FAIL} {h}")
+        problems.append(f"动画未帧驱动：{h}")
+    if not hits:
+        out.append(f"   {OK} 全部帧驱动")
+    return out, problems
+
+
 def main() -> None:
     # Windows 下 stdout 被重定向（npm run / 管道）时用 GBK，✗ ✓ 这类符号会直接崩
     try:
@@ -492,8 +554,10 @@ def main() -> None:
     sections, problems = [], []
     for fn in (check_visual_variety, check_transitions, check_motion_variety,
                check_shot_rhythm, check_impact_budget, check_font_floor,
-               check_caption_size, check_contrast, check_arc):
-        if fn in (check_font_floor, check_caption_size, check_contrast):
+               check_caption_size, check_contrast, check_arc,
+               check_no_timeline_animation):
+        if fn in (check_font_floor, check_caption_size, check_contrast,
+                  check_no_timeline_animation):
             out, probs = fn(src)
         else:
             out, probs = fn(beats)
